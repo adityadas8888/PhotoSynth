@@ -6,17 +6,14 @@ watchdog==4.0.0       # For the NAS watcher service (detecting new files)
 # ExifTool Interface
 pyexiftool==0.2.0     # Python wrapper for ExifTool
 
-# Core Utilities
-pydantic==2.5.3       # For defining the structured Job Schema
-PyYAML==6.0.1         # For loading configuration files (settings.yaml)
-watchdog==4.0.0       # For the NAS watcher service (detecting new files)
-
-# ExifTool Interface
-pyexiftool==0.2.0     # Python wrapper for ExifTool
-
 # Infrastructure
 celery[redis]==5.3.6  # Distributed Task Queue
 redis==5.0.1          # Broker/Backend
+
+# Image Processing
+Pillow>=11.0.0        # Image processing
+imagehash>=4.3.1      # Perceptual hashing
+scipy                 # Often required for some transformers operations
 
 # ML / AI Core
 torch>=2.1.0          # PyTorch (Ensure CUDA version is installed manually if needed)
@@ -24,5 +21,3 @@ transformers>=4.37.0  # Hugging Face Transformers
 accelerate>=0.26.0    # Model offloading/inference acceleration
 bitsandbytes>=0.41.0  # 4-bit quantization
 qwen_vl_utils         # Utilities for Qwen-VL models
-Pillow                # Image processing
-scipy                 # Often required for some transformers operations
