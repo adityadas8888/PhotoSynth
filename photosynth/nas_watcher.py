@@ -51,6 +51,11 @@ class PhotoSynthHandler(FileSystemEventHandler):
             return
 
         src_path = event.src_path
+        
+        # Skip Synology metadata directories
+        if '@eaDir' in src_path:
+            return
+        
         file_ext = Path(src_path).suffix.lower()
 
         if file_ext in FILE_PATTERNS:
