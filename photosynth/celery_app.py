@@ -4,7 +4,7 @@ from celery import Celery
 
 # Broker and backend point to the Redis instance running on 10.0.0.230
 # If your 3090 PC IP changes, you MUST update this line!
-REDIS_BROKER_URL = 'redis://10.0.0.230:6379/0'
+REDIS_BROKER_URL = 'redis://10.10.10.2:6379/0'
 
 app = Celery(
     'PhotoSynth',

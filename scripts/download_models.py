@@ -5,11 +5,16 @@ from huggingface_hub import snapshot_download
 MODELS_DIR = os.path.expanduser("~/personal/PhotoSynth/models")
 
 def download_model(repo_id, folder_name):
+    target_dir = os.path.join(MODELS_DIR, folder_name)
+    if os.path.exists(target_dir) and os.listdir(target_dir):
+        print(f"✅ {folder_name} already exists. Skipping.")
+        return
+
     print(f"⬇️  Downloading {repo_id} to {folder_name}...")
     try:
         snapshot_download(
             repo_id=repo_id, 
-            local_dir=os.path.join(MODELS_DIR, folder_name),
+            local_dir=target_dir,
             local_dir_use_symlinks=False,
             ignore_patterns=["*.msgpack", "*.h5", "*.ot", "*.onnx"]
         )
@@ -18,17 +23,21 @@ def download_model(repo_id, folder_name):
         print(f"❌ Error {repo_id}: {e}\n")
 
 def main():
-    # 1. Llama 3.2 Vision (11B) - For 3090 PC (Day-to-Day)
+    print(f"📂 Saving models to: {MODELS_DIR}\n")
+
+    # --- FOR 3090 PC (Daily Driver) ---
+    # Llama 3.2 11B: Best for natural descriptions of people/scenes
     download_model("meta-llama/Llama-3.2-11B-Vision-Instruct", "llama_3_2_vision")
 
-    # 2. Qwen2-VL-7B-Instruct - For 5090 PC (Backlog/OCR Powerhouse)
-    # Note: We use 7B because 72B is too big even for 5090 without complex splitting
-    download_model("Qwen/Qwen2-VL-7B-Instruct", "qwen2_vl")
+    # --- FOR 5090 PC (Backlog Beast) ---
+    # Qwen3-VL-32B: The SOTA for OCR and details. 
+    # Note: This is huge. We will run it in 4-bit on the 5090.
+    download_model("Qwen/Qwen3-VL-32B-Instruct", "qwen3_vl_32b")
 
-    # 3. Detection Models (For 3090)
+    # --- SHARED DETECTION MODELS (Run on 3090 usually) ---
+    download_model("facebook/sam3", "sam_3")
     download_model("IDEA-Research/grounding-dino-base", "grounding_dino")
-    download_model("facebook/sam2.1-hiera-large", "sam_3")
-    download_model("PaddlePaddle/PaddleOCR-VL-0.9B", "paddleocr_vl")
+    download_model("PaddlePaddle/PaddleOCR-VL", "paddleocr_vl")
 
 if __name__ == "__main__":
     if not os.path.exists(MODELS_DIR):
