@@ -1,0 +1,16 @@
+# Core Utilities
+pydantic==2.5.3       # For defining the structured Job Schema
+PyYAML==6.0.1         # For loading configuration files (settings.yaml)
+watchdog==4.0.0       # For the NAS watcher service (detecting new files)
+
+# ExifTool Interface
+pyexiftool==0.2.0     # Python wrapper for ExifTool
+
+# Queue/Job Management (Choose one library based on your Queue Manager selection)
+# If using Redis/RQ:
+# redis==5.0.1
+# rq==1.15.1
+#
+# If using RabbitMQ/Celery (More robust):
+# celery==5.3.6
+# redis==5.0.1        # Still often needed as a Celery broker/backend
