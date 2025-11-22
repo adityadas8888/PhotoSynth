@@ -35,6 +35,9 @@ dependencies = [
     "pyexiftool",
 
     # Placeholder for ML framework, will be installed later
-    # "torch>=2.0.0",
-    # "transformers",
+     "torch>=2.0.0",
+     "transformers",
+     "torchvision",                # Required for image loading/pre-processing
+     "numpy",                      # Essential for array manipulation
+     "Pillow",                     # Standard image library (for opening image files)
 ]
