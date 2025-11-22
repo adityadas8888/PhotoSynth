@@ -19,7 +19,7 @@ Wants=redis-server.service
 [Service]
 User=$USER
 WorkingDirectory=$PROJECT_DIR
-ExecStart=/usr/bin/uv run celery -A photosynth.tasks worker --loglevel=info -Q detection_queue,vlm_queue -n worker_3090 --concurrency=1
+ExecStart=/home/aditya/.local/bin/uv run celery -A photosynth.tasks worker --loglevel=info -Q detection_queue,vlm_queue -n worker_3090 --concurrency=1
 Restart=always
 RestartSec=10
 StandardOutput=append:$PROJECT_DIR/logs/worker.log
@@ -42,7 +42,7 @@ After=network.target
 [Service]
 User=$USER
 WorkingDirectory=$PROJECT_DIR
-ExecStart=/usr/bin/uv run uvicorn photosynth.ui.backend:app --host 0.0.0.0 --port 8000
+ExecStart=/home/aditya/.local/bin/uv run uvicorn photosynth.ui.backend:app --host 0.0.0.0 --port 8000
 Restart=always
 RestartSec=10
 StandardOutput=append:$PROJECT_DIR/logs/ui.log
@@ -66,7 +66,7 @@ Wants=photosynth-worker.service
 [Service]
 User=$USER
 WorkingDirectory=$PROJECT_DIR
-ExecStart=/usr/bin/uv run python -m photosynth.nas_watcher
+ExecStart=/home/aditya/.local/bin/uv run python -m photosynth.nas_watcher
 Restart=always
 RestartSec=10
 StandardOutput=append:$PROJECT_DIR/logs/watcher.log
