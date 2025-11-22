@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 import sqlite3
 import os
@@ -20,6 +21,7 @@ app.add_middleware(
 # Database Path
 DB_PATH = os.path.expanduser("~/personal/PhotoSynth/photosynth.db")
 FACES_DIR = os.path.expanduser("~/personal/PhotoSynth/faces_crop")
+UI_DIR = os.path.dirname(__file__)
 
 # Serve Face Crops Static Files
 if not os.path.exists(FACES_DIR):
@@ -41,6 +43,11 @@ class ClusterRequest(BaseModel):
     name: str
 
 # --- Endpoints ---
+
+@app.get("/")
+def serve_ui():
+    """Serves the main UI."""
+    return FileResponse(os.path.join(UI_DIR, "index.html"))
 
 @app.get("/clusters")
 def get_clusters():
