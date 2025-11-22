@@ -46,7 +46,10 @@ dependencies = [
 
     # --- Face Analysis ---
     "insightface>=0.7.3",
-    "onnxruntime-gpu>=1.19.0 ; sys_platform == 'linux'"
+    "onnxruntime-gpu>=1.19.0 ; sys_platform == 'linux'",
+
+    # Qwen2-VL Specifics
+    "qwen-vl-utils>=0.0.4",
 ]
 
 # FIX 2: Explicitly tell setuptools which directory is the package

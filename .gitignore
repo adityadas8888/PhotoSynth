@@ -1,37 +1,39 @@
-# IDE/OS Generated Files
+# --- Model Weights & Large Files (CRITICAL) ---
+models/
+model_weights/
+*.safetensors
+*.bin
+*.pth
+*.pt
+*.onnx       # Critical for PaddleOCR / InsightFace
+*.h5
+*.msgpack    # Common in some caching layers
+*.ot         # OpenVINO / Other formats
+
+# --- Python & Virtual Environments ---
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+*.egg-info/
+dist/
+build/
+
+# --- Configuration & Secrets ---
+config/settings.yaml
+config/secrets.yaml
+.env
+
+# --- Runtime Data ---
+*.log
+*.sqlite3
+data/
+outputs/
+
+# --- IDEs & OS ---
 .idea/
 .vscode/
 *.swp
 *.bak
 .DS_Store
-
-# Virtual Environment
-.venv/
-venv/
-env/
-
-# Python specific
-__pycache__/
-*.pyc
-*.log
-*.sqlite3
-
-# ML/Model Specific
-models/
-model_weights/
-*.safetensors
-*.bin
-*.pt
-*.pth
-
-# Configuration and Secrets
-config/settings.yaml
-data/processed_jobs.db
-
-# Build/Distro Files
-dist/
-build/
-*.egg-info/
-
-# Project Outputs
-outputs/
