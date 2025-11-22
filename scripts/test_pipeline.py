@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Manual test script for PhotoSynth pipeline.
-Processes files in ~/personal/nas/photo/TEST folder.
+Processes files in ~/personal/nas/video/TEST folder.
 """
 
 import os
@@ -10,10 +10,10 @@ from pathlib import Path
 from photosynth.tasks import run_detection_pass
 
 # Test directory
-TEST_DIR = Path.home() / "personal/nas/photo/TEST"
+TEST_DIR = Path.home() / "personal/nas/video/TEST"
 
 # File extensions to process
-EXTENSIONS = ['.jpg', '.jpeg', '.png', '.arw', '.raw', '.tiff', '.heic']
+EXTENSIONS = ['.jpg', '.jpeg', '.png', '.arw', '.raw', '.tiff', '.heic', '.mp4', '.mov']
 
 def should_skip(path):
     """Check if path should be skipped."""
