@@ -5,46 +5,50 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "PhotoSynth"
 version = "0.1.0"
-description = "Distributed pipeline for NAS photo and video tagging."
+description = "Distributed pipeline for NAS photo tagging using SAM 3, Grounding DINO, and Llama 3.2 Vision."
 readme = "README.md"
 authors = [
     { name = "Aditya Das", email = "aditya.das8.ad@gmail.com" }
 ]
-license = { text = "Apache-2.0" }
-# STRICT: Only allow Python 3.11 for now to prevent 3.12 conflicts
+# FIX 1: Use simple string for license (SPDX identifier)
+license = "Apache-2.0"
 requires-python = ">=3.11, <3.12"
 
 dependencies = [
     # --- Core Infrastructure ---
-    "celery[redis]>=5.3.0",
-    "redis>=5.0.0",
-    "pydantic>=2.5.0",
+    "celery[redis]>=5.5.0",
+    "redis>=5.2.0",
+    "pydantic>=2.10.0",
     "PyYAML>=6.0.0",
-    "watchdog>=4.0.0",
+    "watchdog>=6.0.0",
     "python-dotenv>=1.0.0",
+    "huggingface_hub>=0.26.0",
 
     # --- Image & File Handling ---
-    "Pillow>=10.0.0",
-    "numpy<2.0.0",           # Pinned < 2.0 for compatibility with current ML libs
-    "opencv-python>=4.8.0",
+    "Pillow>=11.0.0",
+    "numpy<2.0.0",
+    "opencv-python>=4.10.0",
     "pyexiftool>=0.5.0",
 
     # --- Machine Learning Frameworks ---
-    "torch>=2.1.0",
-    "torchvision>=0.16.0",
+    "torch>=2.5.0",
+    "torchvision>=0.20.0",
 
     # --- Transformers & VLMs ---
-    "transformers>=4.36.0",
-    "accelerate>=0.25.0",
-    # bitsandbytes is Linux specific usually
-    "bitsandbytes>=0.41.0 ; sys_platform == 'linux'",
+    "transformers>=4.46.0",
+    "accelerate>=1.0.0",
+    "bitsandbytes>=0.44.0 ; sys_platform == 'linux'",
 
-    # --- PaddleOCR (The source of your error) ---
-    # Only attempt to install the GPU version on Linux
+    # --- Model Specifics ---
+    "timm>=1.0.0",
     "paddlepaddle-gpu==2.6.1 ; sys_platform == 'linux'",
-    "paddleocr>=2.7.0",
+    "paddleocr>=2.9.0",
 
     # --- Face Analysis ---
     "insightface>=0.7.3",
-    "onnxruntime-gpu>=1.16.0 ; sys_platform == 'linux'"
+    "onnxruntime-gpu>=1.19.0 ; sys_platform == 'linux'"
 ]
+
+# FIX 2: Explicitly tell setuptools which directory is the package
+[tool.setuptools]
+packages = ["photosynth"]
