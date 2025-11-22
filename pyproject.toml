@@ -1,0 +1,40 @@
+[build-system]
+# Standard way to tell Python how to build this package (even if you don't intend to publish it)
+requires = ["setuptools>=61.0.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+# Basic project metadata
+name = "PhotoSynth"
+version = "0.1.0"
+description = "Distributed pipeline for NAS photo and video tagging using VLM and SAM."
+readme = "README.md"
+authors = [
+    { name = "Aditya Das", email = "aditya.das@example.com" } # Replace with your preferred contact info
+]
+license = { text = "Apache-2.0" } # As agreed upon
+
+# Classifiers help categorize your project (optional but good practice)
+classifiers = [
+    "Programming Language :: Python :: 3.11",
+    "Framework :: Celery",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence"
+]
+
+# This is where you declare your runtime dependencies
+dependencies = [
+    # Core Celery/Queue Backbone
+    "celery[redis]",
+    "pydantic",
+    "PyYAML",
+
+    # File Watcher
+    "watchdog",
+
+    # ExifTool Interface (Needed on the commit worker)
+    "pyexiftool",
+
+    # Placeholder for ML framework, will be installed later
+    # "torch>=2.0.0",
+    # "transformers",
+]
