@@ -1,7 +1,9 @@
 import socket
 import torch
+import json
 from transformers import AutoProcessor, AutoModelForCausalLM, MllamaForConditionalGeneration
 from qwen_vl_utils import process_vision_info
+from PIL import Image
 
 class Captioner:
     def __init__(self):
@@ -20,11 +22,6 @@ class Captioner:
         if "5090" in self.hostname:
             self.model_type = "Qwen3"
             print(f"[{self.hostname}] 🚀 Loading Qwen3-VL-32B (4-bit)...")
-            # VRAM Calculation for 32B Model @ 4-bit:
-            # Weights: 32B * 0.5 bytes = 16GB
-            # KV Cache + Activations (approx): ~4-6GB
-            # Total Est: ~20-22GB.
-            # RTX 5090 has 32GB VRAM -> Fits comfortably with ~10GB headroom.
             model_id = "Qwen/Qwen3-VL-32B-Instruct"
             
             self.model = AutoModelForCausalLM.from_pretrained(
@@ -48,29 +45,64 @@ class Captioner:
             )
             self.processor = AutoProcessor.from_pretrained(model_id)
 
-    def generate_caption(self, image_path):
+    def generate_analysis(self, image_path):
         """
-        Generates a caption for the given image path.
+        Generates both a detailed narrative and search-optimized concepts.
+        Returns a dict: {'narrative': str, 'concepts': list}
         """
-        print(f"[{self.hostname}] Generating caption for {image_path} using {self.model_type}...")
+        print(f"[{self.hostname}] Analyzing {image_path} using {self.model_type}...")
         
-        if self.model_type == "Qwen3":
-            return self._generate_qwen(image_path)
-        else:
-            return self._generate_llama(image_path)
+        # We ask for a structured output to get both narrative and keywords
+        prompt = (
+            "Analyze this image in detail.\n"
+            "1. Provide a rich, detailed narrative description of the scene, lighting, and subjects.\n"
+            "2. Provide a list of 5-10 critical search concepts/keywords. "
+            "Use synonym expansion (e.g., if you see a 'car', add 'vehicle', 'sedan'). "
+            "Format the keywords as a JSON list."
+        )
 
-    def _generate_qwen(self, image_path):
+        if self.model_type == "Qwen3":
+            raw_output = self._generate_qwen(image_path, prompt)
+        else:
+            raw_output = self._generate_llama(image_path, prompt)
+            
+        return self._parse_output(raw_output)
+
+    def _parse_output(self, raw_text):
+        """
+        Parses the VLM output to extract narrative and concepts.
+        This is a heuristic parser since VLMs might not output perfect JSON.
+        """
+        narrative = raw_text
+        concepts = []
+        
+        # Simple heuristic: Look for the JSON list part
+        try:
+            # Find start and end of list
+            start = raw_text.find('[')
+            end = raw_text.rfind(']') + 1
+            if start != -1 and end != -1:
+                json_str = raw_text[start:end]
+                concepts = json.loads(json_str)
+                # Remove the JSON part from the narrative to keep it clean
+                narrative = raw_text.replace(json_str, "").strip()
+        except Exception as e:
+            print(f"⚠️ Failed to parse keywords from VLM output: {e}")
+            # Fallback: Use the whole text as narrative, empty concepts
+            
+        return {"narrative": narrative, "concepts": concepts}
+
+    def _generate_qwen(self, image_path, prompt_text):
         messages = [
             {
                 "role": "user",
                 "content": [
                     {"type": "image", "image": image_path},
-                    {"type": "text", "text": "Describe this image in detail."},
+                    {"type": "text", "text": prompt_text},
                 ],
             }
         ]
         
-        # Preparation for inference
         text = self.processor.apply_chat_template(
             messages, tokenize=False, add_generation_prompt=True
         )
@@ -84,8 +116,7 @@ class Captioner:
         )
         inputs = inputs.to(self.model.device)
 
-        # Inference
-        generated_ids = self.model.generate(**inputs, max_new_tokens=128)
+        generated_ids = self.model.generate(**inputs, max_new_tokens=512)
         generated_ids_trimmed = [
             out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
         ]
@@ -94,14 +125,13 @@ class Captioner:
         )
         return output_text[0]
 
-    def _generate_llama(self, image_path):
-        from PIL import Image
+    def _generate_llama(self, image_path, prompt_text):
         image = Image.open(image_path)
         
         messages = [
             {"role": "user", "content": [
                 {"type": "image"},
-                {"type": "text", "text": "Describe this image in detail."}
+                {"type": "text", "text": prompt_text}
             ]}
         ]
         input_text = self.processor.apply_chat_template(messages, add_generation_prompt=True)
@@ -112,5 +142,5 @@ class Captioner:
             return_tensors="pt"
         ).to(self.model.device)
 
-        output = self.model.generate(**inputs, max_new_tokens=128)
+        output = self.model.generate(**inputs, max_new_tokens=512)
         return self.processor.decode(output[0])

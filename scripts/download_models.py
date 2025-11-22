@@ -22,22 +22,33 @@ def download_model(repo_id, folder_name):
     except Exception as e:
         print(f"❌ Error {repo_id}: {e}\n")
 
+import argparse
+
 def main():
+    parser = argparse.ArgumentParser(description="Download PhotoSynth Models")
+    parser.add_argument("--model", type=str, help="Specific model key to download (e.g., sam_3, qwen3)")
+    args = parser.parse_args()
+
     print(f"📂 Saving models to: {MODELS_DIR}\n")
 
-    # --- FOR 3090 PC (Daily Driver) ---
-    # Llama 3.2 11B: Best for natural descriptions of people/scenes
-    download_model("meta-llama/Llama-3.2-11B-Vision-Instruct", "llama_3_2_vision")
+    models_to_download = {
+        "llama_3_2_vision": ("meta-llama/Llama-3.2-11B-Vision-Instruct", "llama_3_2_vision"),
+        "qwen3_vl_32b": ("Qwen/Qwen3-VL-32B-Instruct", "qwen3_vl_32b"),
+        "sam_3": ("facebook/sam3", "sam_3"),
+        "grounding_dino": ("IDEA-Research/grounding-dino-base", "grounding_dino"),
+        "paddleocr_vl": ("PaddlePaddle/PaddleOCR-VL", "paddleocr_vl"),
+    }
 
-    # --- FOR 5090 PC (Backlog Beast) ---
-    # Qwen3-VL-32B: The SOTA for OCR and details. 
-    # Note: This is huge. We will run it in 4-bit on the 5090.
-    download_model("Qwen/Qwen3-VL-32B-Instruct", "qwen3_vl_32b")
-
-    # --- SHARED DETECTION MODELS (Run on 3090 usually) ---
-    download_model("facebook/sam3", "sam_3")
-    download_model("IDEA-Research/grounding-dino-base", "grounding_dino")
-    download_model("PaddlePaddle/PaddleOCR-VL", "paddleocr_vl")
+    if args.model:
+        if args.model in models_to_download:
+            repo_id, folder = models_to_download[args.model]
+            download_model(repo_id, folder)
+        else:
+            print(f"❌ Unknown model: {args.model}")
+    else:
+        # Download all
+        for key, (repo_id, folder) in models_to_download.items():
+            download_model(repo_id, folder)
 
 if __name__ == "__main__":
     if not os.path.exists(MODELS_DIR):

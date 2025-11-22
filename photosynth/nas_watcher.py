@@ -6,13 +6,16 @@ from watchdog.events import FileSystemEventHandler
 from pathlib import Path
 from .tasks import run_detection_pass  # Import the starting Celery task
 
-# --- Configuration ---
+import yaml
+
+# Load Configuration
+SETTINGS_PATH = os.path.join(os.path.dirname(__file__), '../settings.yaml')
+with open(SETTINGS_PATH, 'r') as f:
+    config = yaml.safe_load(f)
+
 # Your mounted NAS photo shares (the ones to watch)
-WATCH_DIRS = [
-    Path("~/personal/nas/photo").expanduser(),
-    Path("~/personal/nas/video").expanduser(),
-    # Path("~/personal/nas/homes").expanduser(), # Uncomment if you want to watch homes too
-]
+nas_mount = Path(config['paths']['nas_mount']).expanduser()
+WATCH_DIRS = [nas_mount / d for d in config['paths']['watch_dirs']]
 
 # File extensions to process (photos and common video formats)
 FILE_PATTERNS = [
@@ -21,15 +24,22 @@ FILE_PATTERNS = [
 ]
 
 
+import imagehash
+from PIL import Image
+
 # --- Hashing Utility ---
-def hash_file_sha256(filepath):
-    """Generates a SHA256 hash for a file in chunks to handle large files efficiently."""
-    hasher = hashlib.sha256()
-    # Read the file in 64KB chunks
-    with open(filepath, 'rb') as f:
-        for chunk in iter(lambda: f.read(65536), b''):
-            hasher.update(chunk)
-    return hasher.hexdigest()
+def calculate_phash(filepath):
+    """Generates a Perceptual Hash (pHash) which is robust to metadata changes."""
+    try:
+        img = Image.open(filepath)
+        # 8x8 pHash is standard (64 bits)
+        phash = str(imagehash.phash(img))
+        return phash
+    except Exception as e:
+        print(f"⚠️ Could not calculate pHash for {filepath}: {e}")
+        # Fallback to filename+size if image is unreadable (e.g. video)
+        # For videos, pHash is harder. We might need a different strategy or just use path for now.
+        return f"ERR_{os.path.basename(filepath)}"
 
 
 # --- Watchdog Event Handler ---
@@ -50,14 +60,14 @@ class PhotoSynthHandler(FileSystemEventHandler):
             time.sleep(1)
 
             try:
-                # 1. Generate unique hash for tracking
-                file_hash = hash_file_sha256(src_path)
+                # 1. Generate unique hash for tracking (pHash)
+                file_hash = calculate_phash(src_path)
 
                 # 2. Inject job into the Detection Queue (starts the pipeline)
                 # The task is routed to the 3090 PC worker via 'detection_queue'
                 run_detection_pass.delay(src_path)
 
-                print(f"Job queued successfully. Hash: {file_hash[:8]}...")
+                print(f"Job queued successfully. Hash: {file_hash}...")
 
             except FileNotFoundError:
                 print(f"Error: File disappeared before processing: {src_path}")

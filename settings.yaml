@@ -1,0 +1,25 @@
+# PhotoSynth Configuration
+
+network:
+  redis_url: "redis://10.10.10.2:6379/0"  # Change to localhost for testing
+  node_a_ip: "10.10.10.2"
+  node_b_ip: "10.10.10.1"
+
+paths:
+  nas_mount: "~/personal/nas"
+  models_dir: "~/personal/PhotoSynth/models"
+  watch_dirs:
+    - "photo"
+    - "video"
+    - "homes"
+
+models:
+  node_a:
+    vision: "meta-llama/Llama-3.2-11B-Vision-Instruct"
+    detection: ["facebook/sam3", "IDEA-Research/grounding-dino-base"]
+  node_b:
+    vision: "Qwen/Qwen3-VL-32B-Instruct"
+
+processing:
+  enable_failover: true
+  max_retries: 3

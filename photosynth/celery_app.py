@@ -4,7 +4,16 @@ from celery import Celery
 
 # Broker and backend point to the Redis instance running on 10.0.0.230
 # If your 3090 PC IP changes, you MUST update this line!
-REDIS_BROKER_URL = 'redis://10.10.10.2:6379/0'
+import yaml
+import os
+
+# Load Configuration
+SETTINGS_PATH = os.path.join(os.path.dirname(__file__), '../settings.yaml')
+with open(SETTINGS_PATH, 'r') as f:
+    config = yaml.safe_load(f)
+
+# Broker and backend point to the Redis instance defined in settings
+REDIS_BROKER_URL = config['network']['redis_url']
 
 app = Celery(
     'PhotoSynth',
