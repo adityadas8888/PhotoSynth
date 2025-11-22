@@ -1,7 +1,7 @@
 # PhotoSynth Configuration
 
 network:
-  redis_url: "redis://10.10.10.2:6379/0"  # Change to localhost for testing
+  redis_url: "redis://127.0.0.1:6379/0"  # Use localhost on 3090
   node_a_ip: "10.10.10.2"
   node_b_ip: "10.10.10.1"
 
