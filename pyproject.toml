@@ -5,55 +5,46 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "PhotoSynth"
 version = "0.1.0"
-description = "Distributed pipeline for NAS photo and video tagging using SAM 3, Grounding DINO, and Llama 3.2 Vision."
+description = "Distributed pipeline for NAS photo and video tagging."
 readme = "README.md"
 authors = [
     { name = "Aditya Das", email = "aditya.das8.ad@gmail.com" }
 ]
 license = { text = "Apache-2.0" }
-requires-python = ">=3.11"
+# STRICT: Only allow Python 3.11 for now to prevent 3.12 conflicts
+requires-python = ">=3.11, <3.12"
 
 dependencies = [
     # --- Core Infrastructure ---
-    "celery[redis]>=5.5.0",
-    "redis>=5.2.0",
-    "pydantic>=2.10.0",
+    "celery[redis]>=5.3.0",
+    "redis>=5.0.0",
+    "pydantic>=2.5.0",
     "PyYAML>=6.0.0",
-    "watchdog>=6.0.0",
+    "watchdog>=4.0.0",
     "python-dotenv>=1.0.0",
 
     # --- Image & File Handling ---
-    "Pillow>=11.0.0",
-    "numpy>=2.0.0",
-    "opencv-python>=4.10.0",
+    "Pillow>=10.0.0",
+    "numpy<2.0.0",           # Pinned < 2.0 for compatibility with current ML libs
+    "opencv-python>=4.8.0",
     "pyexiftool>=0.5.0",
 
     # --- Machine Learning Frameworks ---
-    "torch>=2.5.0",
-    "torchvision>=0.20.0",
-    "torchaudio>=2.5.0",
+    "torch>=2.1.0",
+    "torchvision>=0.16.0",
 
-    # --- Transformers & VLMs (Hugging Face) ---
-    "transformers>=4.48.0",  # Needed for Llama 3.2 Vision & Grounding DINO
-    "accelerate>=1.0.0",
-    "bitsandbytes>=0.45.0",  # Crucial for 4-bit quantization on 3090
+    # --- Transformers & VLMs ---
+    "transformers>=4.36.0",
+    "accelerate>=0.25.0",
+    # bitsandbytes is Linux specific usually
+    "bitsandbytes>=0.41.0 ; sys_platform == 'linux'",
 
-    # --- Specific Model Libraries ---
-    # SAM 3 (Meta's latest - usually requires specific repo or upgraded transformers)
-    "timm>=1.0.0",
-    "segment-anything-2",    # Placeholder: SAM 3 often installs via git, see instructions below
+    # --- PaddleOCR (The source of your error) ---
+    # Only attempt to install the GPU version on Linux
+    "paddlepaddle-gpu==2.6.1 ; sys_platform == 'linux'",
+    "paddleocr>=2.7.0",
 
-    # PaddleOCR (Use the new VL version for 2025)
-    "paddlepaddle-gpu>=3.0.0",
-    "paddleocr>=2.9.0",
-
-    # Face Analysis
-    "insightface>=0.7.3",    # Best for RetinaFace + ArcFace
-    "onnxruntime-gpu>=1.20.0" # Backend for InsightFace
+    # --- Face Analysis ---
+    "insightface>=0.7.3",
+    "onnxruntime-gpu>=1.16.0 ; sys_platform == 'linux'"
 ]
-
-[tool.uv]
-# Use this to pin specific git dependencies if they aren't on PyPI yet (common for new SAM versions)
-# dependencies = [
-#    "segment-anything-3 @ git+https://github.com/facebookresearch/segment-anything-3.git"
-# ]
