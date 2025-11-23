@@ -25,12 +25,19 @@ class Detector:
         print(f"[{self.device}] 💃 Loading Florence-2-Large...")
         model_path = os.path.join(self.models_dir, "florence_2_large")
         
-        # Load Local Only
+        # We load from local folder, so the ID matters less here, but good to be consistent
+        # Use 'florence-community/Florence-2-large' if you ever fallback to download
         self.florence_model = AutoModelForCausalLM.from_pretrained(
-            model_path, trust_remote_code=True, local_files_only=True, torch_dtype=torch.float16
+            model_path, 
+            trust_remote_code=True, 
+            local_files_only=True, 
+            torch_dtype=torch.float16
         ).to(self.device)
+        
         self.florence_processor = AutoProcessor.from_pretrained(
-            model_path, trust_remote_code=True, local_files_only=True
+            model_path, 
+            trust_remote_code=True, 
+            local_files_only=True
         )
 
     def run_detection(self, file_path):
