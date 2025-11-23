@@ -7,7 +7,7 @@ from photosynth.pipeline.detector import Detector
 from photosynth.utils.hashing import calculate_content_hash
 
 # Config
-NAS_PATH = os.path.expanduser("~/personal/nas/photo")
+NAS_PATH = os.path.expanduser("~/personal/nas/video/TEST")
 # Only harvest faces from Images. Videos are too blurry/numerous for the cluster DB.
 EXTENSIONS = ['.jpg', '.jpeg', '.png', '.arw', '.heic']
 
