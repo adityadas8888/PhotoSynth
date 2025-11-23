@@ -1,40 +1,8 @@
 import cv2
 import os
 import torch
-import sys
-import types
-import importlib.util
-from unittest.mock import MagicMock
 from PIL import Image
 from insightface.app import FaceAnalysis
-
-# --- 🛡️ ROBUST FLASH ATTENTION MOCK -----------------------------------------
-# We create a "Real Fake" module that satisfies Python's import system (importlib).
-if "flash_attn" not in sys.modules:
-    # 1. Create a proper Module object (not just a Mock)
-    dummy_flash = types.ModuleType("flash_attn")
-    
-    # 2. Create a dummy spec so importlib doesn't crash inspecting it
-    # This tells Python: "Yes, this is a valid module, stop asking."
-    dummy_spec = importlib.util.spec_from_loader("flash_attn", loader=None)
-    dummy_flash.__spec__ = dummy_spec
-    dummy_flash.__file__ = "dummy_flash_attn.py"
-    dummy_flash.__path__ = []
-
-    # 3. Inject MagicMock for any internal attributes code might access
-    # (e.g. flash_attn.flash_attn_func)
-    dummy_flash.flash_attn_func = MagicMock()
-    
-    # 4. Inject into system
-    sys.modules["flash_attn"] = dummy_flash
-
-# 5. Force Transformers to use SDPA (Standard Attention)
-# We monkeypatch the check to return False, so it falls back to PyTorch native
-import transformers.utils.import_utils
-transformers.utils.import_utils.is_flash_attn_2_available = lambda: False
-transformers.utils.import_utils.is_flash_attn_available = lambda: False
-# ----------------------------------------------------------------------------
-
 from transformers import AutoProcessor, AutoModelForCausalLM 
 
 class Detector:
@@ -53,29 +21,36 @@ class Detector:
         self.face_app = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider'])
         self.face_app.prepare(ctx_id=0, det_size=(640, 640))
 
-        # 2. Florence-2-Large
+        # 2. Florence-2-Large (Native Mode)
         print(f"[{self.device}] 💃 Loading Florence-2-Large...")
+        
+        # Switch to the official Microsoft weights
         model_path = os.path.join(self.models_dir, "florence_2_large")
         
-        # Load Local Only + Explicit SDPA
+        # Check if local path exists, otherwise fallback to Hub ID
+        load_path = model_path if os.path.exists(model_path) else "microsoft/Florence-2-large"
+
+        # trust_remote_code=False is the KEY. 
+        # It forces the use of the built-in, stable Transformers implementation.
         self.florence_model = AutoModelForCausalLM.from_pretrained(
-            model_path, 
-            trust_remote_code=True, 
-            local_files_only=True, 
+            load_path, 
+            trust_remote_code=False, 
             torch_dtype=torch.float16,
-            attn_implementation="sdpa"  # Force PyTorch SDPA
+            attn_implementation="sdpa" # Uses PyTorch's fast native attention
         ).to(self.device)
         
         self.florence_processor = AutoProcessor.from_pretrained(
-            model_path, 
-            trust_remote_code=True, 
-            local_files_only=True
+            load_path, 
+            trust_remote_code=False
         )
 
     def run_detection(self, file_path):
         print(f"Processing {os.path.basename(file_path)}...")
         
-        ext = os.path.splitext(file_path)[1].lower()
+        # Handle extensions safely
+        _, ext = os.path.splitext(file_path)
+        ext = ext.lower()
+        
         if ext in ['.mp4', '.mov', '.avi', '.mkv', '.m4v']:
             return self._process_video(file_path)
         else:
@@ -99,7 +74,7 @@ class Detector:
         }
 
     def _process_video(self, video_path):
-        print(f"🎬 Video detected. Calculating sampling interval...")
+        print(f"🎬 Video detected. Sampling...")
         cap = cv2.VideoCapture(video_path)
         
         raw_fps = cap.get(cv2.CAP_PROP_FPS)
@@ -108,7 +83,6 @@ class Detector:
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         duration = total_frames / fps
         
-        # 5-2-1 Logic
         if duration > 30: interval_sec = 5
         elif duration > 5: interval_sec = 2
         else: interval_sec = 1
@@ -143,6 +117,7 @@ class Detector:
     def _run_florence_on_frame(self, image_pil):
         task_prompt = "<OD>"
         inputs = self.florence_processor(text=task_prompt, images=image_pil, return_tensors="pt").to(self.device, torch.float16)
+        
         generated_ids = self.florence_model.generate(
             input_ids=inputs["input_ids"], pixel_values=inputs["pixel_values"],
             max_new_tokens=1024, do_sample=False, num_beams=3
