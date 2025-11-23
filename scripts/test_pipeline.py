@@ -16,13 +16,11 @@ TEST_DIR = Path.home() / "personal/nas/video/TEST"
 EXTENSIONS = ['.jpg', '.jpeg', '.png', '.arw', '.raw', '.tiff', '.heic', '.mp4', '.mov']
 
 def should_skip(path):
-    """Check if path should be skipped."""
-    # Skip Synology metadata
-    if '@eaDir' in str(path):
-        return True
-    # Skip hidden files
-    if any(part.startswith('.') for part in path.parts):
-        return True
+    path_str = str(path)
+    # Strict exclude
+    if '@eaDir' in path_str: return True
+    if '/.' in path_str: return True
+    if '#recycle' in path_str: return True
     return False
 
 def find_images(directory):
@@ -63,6 +61,8 @@ def main():
     
     print(f"\n✅ All jobs submitted!")
     print(f"Check logs: tail -f ~/personal/PhotoSynth/logs/worker.log")
+
+
 
 if __name__ == "__main__":
     main()

@@ -1,56 +1,46 @@
-# ~/personal/PhotoSynth/scripts/download_models.py
+#!/usr/bin/env python3
 import os
-from huggingface_hub import snapshot_download
+import torch
+from transformers import (
+    AutoModelForCausalLM, 
+    AutoProcessor, 
+    MllamaForConditionalGeneration
+)
+from insightface.app import FaceAnalysis
 
-MODELS_DIR = os.path.expanduser("~/personal/PhotoSynth/models")
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+MODELS_DIR = os.path.join(BASE_DIR, "models")
+os.makedirs(MODELS_DIR, exist_ok=True)
 
-def download_model(repo_id, folder_name):
-    target_dir = os.path.join(MODELS_DIR, folder_name)
-    if os.path.exists(target_dir) and os.listdir(target_dir):
-        print(f"✅ {folder_name} already exists. Skipping.")
+def download_model(model_id, folder_name, model_class=AutoModelForCausalLM, **kwargs):
+    target_path = os.path.join(MODELS_DIR, folder_name)
+    if os.path.exists(target_path) and os.listdir(target_path):
+        print(f"✅ {folder_name} exists. Skipping.")
         return
 
-    print(f"⬇️  Downloading {repo_id} to {folder_name}...")
+    print(f"⬇️ Downloading {model_id}...")
     try:
-        snapshot_download(
-            repo_id=repo_id, 
-            local_dir=target_dir,
-            local_dir_use_symlinks=False,
-            ignore_patterns=["*.msgpack", "*.h5", "*.ot", "*.onnx"]
-        )
-        print(f"✅ {folder_name} ready.\n")
+        AutoProcessor.from_pretrained(model_id, trust_remote_code=True).save_pretrained(target_path)
+        model_class.from_pretrained(model_id, trust_remote_code=True, **kwargs).save_pretrained(target_path)
+        print(f"🎉 Saved to {target_path}")
     except Exception as e:
-        print(f"❌ Error {repo_id}: {e}\n")
-
-import argparse
+        print(f"❌ Error: {e}")
 
 def main():
-    parser = argparse.ArgumentParser(description="Download PhotoSynth Models")
-    parser.add_argument("--model", type=str, help="Specific model key to download (e.g., sam_3, qwen3)")
-    args = parser.parse_args()
+    # 1. Florence-2 (Object Detection)
+    download_model("microsoft/Florence-2-large", "florence_2_large", torch_dtype=torch.float16)
 
-    print(f"📂 Saving models to: {MODELS_DIR}\n")
+    # 2. Llama 3.2 Vision (Node A VLM)
+    download_model("meta-llama/Llama-3.2-11B-Vision-Instruct", "llama_3_2_vision", model_class=MllamaForConditionalGeneration)
 
-    models_to_download = {
-        "llama_3_2_vision": ("meta-llama/Llama-3.2-11B-Vision-Instruct", "llama_3_2_vision"),
-        "qwen3_vl_32b": ("Qwen/Qwen3-VL-32B-Instruct", "qwen3_vl_32b"),
-        "sam_3": ("facebook/sam3", "sam_3"),
-        "grounding_dino": ("IDEA-Research/grounding-dino-base", "grounding_dino"),
-        "paddleocr_vl": ("PaddlePaddle/PaddleOCR-VL", "paddleocr_vl"),
-    }
-
-    if args.model:
-        if args.model in models_to_download:
-            repo_id, folder = models_to_download[args.model]
-            download_model(repo_id, folder)
-        else:
-            print(f"❌ Unknown model: {args.model}")
-    else:
-        # Download all
-        for key, (repo_id, folder) in models_to_download.items():
-            download_model(repo_id, folder)
+    # 3. InsightFace
+    try:
+        print("⬇️ Checking InsightFace...")
+        app = FaceAnalysis(name='buffalo_l')
+        app.prepare(ctx_id=0, det_size=(640, 640))
+        print("✅ InsightFace Ready")
+    except Exception as e:
+        print(f"❌ InsightFace Error: {e}")
 
 if __name__ == "__main__":
-    if not os.path.exists(MODELS_DIR):
-        os.makedirs(MODELS_DIR)
     main()

@@ -87,17 +87,36 @@ class Captioner:
                 print(f"   Ensure the folder contains config.json and .safetensors files.")
                 raise e
 
-    def generate_analysis(self, image_path):
-        print(f"[{self.hostname}] Analyzing {image_path} using {self.model_type}...")
+ef generate_analysis(self, image_path, det_results=None):
+        if det_results is None: det_results = {}
         
-        prompt = (
-            "Analyze this image in detail.\n"
-            "1. Provide a rich, detailed narrative description of the scene, lighting, and subjects.\n"
-            "2. Provide a list of 5-10 critical search concepts/keywords. "
-            "Use synonym expansion (e.g., if you see a 'car', add 'vehicle', 'sedan'). "
-            "Format the keywords as a JSON list."
-        )
+        # Parse Context from Florence/InsightFace
+        faces = det_results.get('faces', [])
+        objects = det_results.get('objects', [])
+        
+        context_str = ""
+        if faces:
+            context_str += f"Contains {len(faces)} people. "
+        if objects:
+            # Only take top 5 objects to keep prompt clean
+            context_str += f"Key objects: {', '.join(objects[:5])}. "
 
+        # --- THE NEW PROMPT (Optimized for Synology Limits) ---
+        prompt = (
+            f"Context: {context_str}\n"
+            "Task: Write a single, concise caption for this photo (max 200 characters).\n"
+            "Rules:\n"
+            "1. NO bullet points, NO lists, NO 'In summary'.\n"
+            "2. Focus ONLY on the main subject and action.\n"
+            "3. Do not start with 'The image shows' or 'lang=x-default'.\n"
+            "4. Combine the context tags naturally.\n\n"
+            "Example Output: 'A woman in a leopard-print bikini stands on the beach looking at the Golden Gate Bridge.'"
+            "\n\nAlso provide 5-10 JSON keywords."
+        )
+        # -----------------------------------------------------
+
+        print(f"[{self.hostname}] 🧠 Generating concise caption...")
+        
         if self.model_type == "Qwen3":
             raw_output = self._generate_qwen(image_path, prompt)
         else:

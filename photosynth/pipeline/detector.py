@@ -1,78 +1,122 @@
-import torch
 import cv2
 import os
-import numpy as np
+import torch
 from PIL import Image
 from insightface.app import FaceAnalysis
+from transformers import AutoProcessor, AutoModelForCausalLM 
 
 class Detector:
     def __init__(self):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
-        self.sam_model = None
-        self.grounding_dino_model = None
         self.face_app = None
+        self.florence_model = None
+        self.florence_processor = None
+        self.base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        self.models_dir = os.path.join(self.base_dir, "models")
         self._load_models()
 
     def _load_models(self):
-        """
-        Loads SAM 3, Grounding DINO, and InsightFace.
-        """
-        print("🔍 Loading Detection Models...")
-        
-        # --- InsightFace (Face Detection & Embedding) ---
-        # providers=['CUDAExecutionProvider'] if cuda else ['CPUExecutionProvider']
+        # 1. InsightFace
+        print(f"[{self.device}] 🔍 Loading InsightFace...")
         self.face_app = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider'])
         self.face_app.prepare(ctx_id=0, det_size=(640, 640))
-        print("✅ InsightFace Loaded")
 
-        # --- Grounding DINO & SAM 3 (Placeholders for now) ---
-        print("✅ SAM 3 + Grounding DINO (Placeholder) Loaded")
-
-    def run_detection(self, image_path):
-        """
-        Runs full detection pipeline:
-        1. Face Detection & Embedding (InsightFace)
-        2. Object Detection (Grounding DINO) - Placeholder
-        3. Segmentation (SAM 3) - Placeholder
-        """
-        print(f"🔍 Running detection on {image_path}...")
+        # 2. Florence-2-Large
+        print(f"[{self.device}] 💃 Loading Florence-2-Large...")
+        model_path = os.path.join(self.models_dir, "florence_2_large")
         
-        # 1. Face Analysis
-        img = cv2.imread(image_path)
-        if img is None:
-            print(f"❌ Error reading image: {image_path}")
-            return {}
+        # Load Local Only
+        self.florence_model = AutoModelForCausalLM.from_pretrained(
+            model_path, trust_remote_code=True, local_files_only=True, torch_dtype=torch.float16
+        ).to(self.device)
+        self.florence_processor = AutoProcessor.from_pretrained(
+            model_path, trust_remote_code=True, local_files_only=True
+        )
 
-        faces = self.face_app.get(img)
-        face_data = []
+    def run_detection(self, file_path):
+        print(f"Processing {os.path.basename(file_path)}...")
         
-        faces_dir = os.path.expanduser("~/personal/PhotoSynth/faces_crop")
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext in ['.mp4', '.mov', '.avi', '.mkv', '.m4v']:
+            return self._process_video(file_path)
+        else:
+            return self._process_image(file_path)
+
+    def _process_image(self, image_path):
+        image_cv = cv2.imread(image_path)
+        if image_cv is None: return {}
+        image_pil = Image.fromarray(cv2.cvtColor(image_cv, cv2.COLOR_BGR2RGB))
+        
+        faces = self.face_app.get(image_cv)
+        objs = self._run_florence_on_frame(image_pil)
+        
+        # Save crops logic (simplified)
+        self._save_face_crops(faces, image_cv, image_path)
+
+        return {
+            "status": "SUCCESS",
+            "faces": [{"det_score": float(f.det_score)} for f in faces],
+            "objects": objs,
+            "is_video": False
+        }
+
+    def _process_video(self, video_path):
+        print(f"🎬 Video detected. Calculating sampling interval...")
+        cap = cv2.VideoCapture(video_path)
+        
+        fps = cap.get(cv2.CAP_PROP_FPS)
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        duration = total_frames / (fps if fps > 0 else 30)
+        
+        # 5-2-1 Logic
+        if duration > 30: interval_sec = 5
+        elif duration > 5: interval_sec = 2
+        else: interval_sec = 1
+            
+        frame_interval = int(fps * interval_sec)
+        print(f"   Duration: {duration:.1f}s -> Sampling every {interval_sec}s")
+        
+        all_objects = set()
+        frame_idx = 0
+        
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret: break
+            
+            if frame_idx % frame_interval == 0:
+                image_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+                objs = self._run_florence_on_frame(image_pil)
+                all_objects.update(objs)
+            
+            frame_idx += 1
+            
+        cap.release()
+        return {
+            "status": "SUCCESS",
+            "faces": [], 
+            "objects": list(all_objects),
+            "is_video": True
+        }
+
+    def _run_florence_on_frame(self, image_pil):
+        task_prompt = "<OD>"
+        inputs = self.florence_processor(text=task_prompt, images=image_pil, return_tensors="pt").to(self.device, torch.float16)
+        generated_ids = self.florence_model.generate(
+            input_ids=inputs["input_ids"], pixel_values=inputs["pixel_values"],
+            max_new_tokens=1024, do_sample=False, num_beams=3
+        )
+        generated_text = self.florence_processor.batch_decode(generated_ids, skip_special_tokens=False)[0]
+        parsed = self.florence_processor.post_process_generation(
+            generated_text, task=task_prompt, image_size=(image_pil.width, image_pil.height)
+        )
+        return [label.lower() for label in parsed.get('<OD>', {}).get('labels', [])]
+
+    def _save_face_crops(self, faces, img, image_path):
+        # Helper to save faces (kept your original logic structure)
+        faces_dir = os.path.join(self.base_dir, "faces_crop")
         os.makedirs(faces_dir, exist_ok=True)
-
         for i, face in enumerate(faces):
-            # Save Crop
             bbox = face.bbox.astype(int)
             crop = img[bbox[1]:bbox[3], bbox[0]:bbox[2]]
-            
-            # Generate unique face ID (hash of embedding or file+index)
-            # For now, simple filename
-            face_filename = f"{os.path.basename(image_path)}_{i}.jpg"
-            crop_path = os.path.join(faces_dir, face_filename)
-            
             if crop.size > 0:
-                cv2.imwrite(crop_path, crop)
-            
-            face_data.append({
-                "bbox": bbox.tolist(),
-                "embedding": face.embedding.tolist(), # 512-d vector
-                "crop_path": crop_path,
-                "det_score": float(face.det_score)
-            })
-
-        print(f"   Found {len(faces)} faces.")
-        
-        return {
-            "status": "SUCCESS", 
-            "faces": face_data,
-            "objects": [] # Placeholder for DINO results
-        }
+                cv2.imwrite(os.path.join(faces_dir, f"{os.path.basename(image_path)}_{i}.jpg"), crop)
