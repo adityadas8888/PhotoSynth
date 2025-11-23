@@ -36,4 +36,5 @@ outputs/
 .vscode/
 *.swp
 *.bak
-.DS_Store.secretsenv
+.DS_Store
+.secretsenv
