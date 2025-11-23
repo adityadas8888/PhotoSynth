@@ -1,18 +1,22 @@
 import cv2
 import os
 import torch
+import json
+import numpy as np
 from PIL import Image
 from insightface.app import FaceAnalysis
-from transformers import AutoProcessor, AutoModelForCausalLM 
+from ultralytics import YOLOWorld
 
 class Detector:
     def __init__(self):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
         self.face_app = None
-        self.florence_model = None
-        self.florence_processor = None
+        self.yolo_model = None
+        
+        # Paths
         self.base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        self.models_dir = os.path.join(self.base_dir, "models")
+        self.vocab_path = os.path.join(self.base_dir, "photosynth", "vocabulary.json")
+        
         self._load_models()
 
     def _load_models(self):
@@ -21,36 +25,28 @@ class Detector:
         self.face_app = FaceAnalysis(name='buffalo_l', providers=['CUDAExecutionProvider'])
         self.face_app.prepare(ctx_id=0, det_size=(640, 640))
 
-        # 2. Florence-2-Large (Native Mode)
-        print(f"[{self.device}] 💃 Loading Florence-2-Large...")
+        # 2. YOLO-World
+        print(f"[{self.device}] 🦅 Loading YOLO-World...")
+        # It auto-downloads 'yolov8l-worldv2.pt' to current dir or cache on first run
+        self.yolo_model = YOLOWorld('yolov8l-worldv2.pt')
+        self.yolo_model.to(self.device)
         
-        # Switch to the official Microsoft weights
-        model_path = os.path.join(self.models_dir, "florence_2_large")
-        
-        # Check if local path exists, otherwise fallback to Hub ID
-        load_path = model_path if os.path.exists(model_path) else "microsoft/Florence-2-large"
+        # 3. Load Vocabulary
+        if os.path.exists(self.vocab_path):
+            with open(self.vocab_path, 'r') as f:
+                vocab = json.load(f)
+            print(f"   📚 Loaded {len(vocab)} classes from vocabulary.json")
+        else:
+            print("   ⚠️ vocabulary.json not found! Using fallback list.")
+            vocab = ["person", "cat", "dog", "car", "food"]
 
-        # trust_remote_code=False is the KEY. 
-        # It forces the use of the built-in, stable Transformers implementation.
-        self.florence_model = AutoModelForCausalLM.from_pretrained(
-            load_path, 
-            trust_remote_code=False, 
-            torch_dtype=torch.float16,
-            attn_implementation="sdpa" # Uses PyTorch's fast native attention
-        ).to(self.device)
-        
-        self.florence_processor = AutoProcessor.from_pretrained(
-            load_path, 
-            trust_remote_code=False
-        )
+        # Compile vocabulary into the model (Offline Optimization)
+        self.yolo_model.set_classes(vocab)
 
     def run_detection(self, file_path):
         print(f"Processing {os.path.basename(file_path)}...")
         
-        # Handle extensions safely
-        _, ext = os.path.splitext(file_path)
-        ext = ext.lower()
-        
+        ext = os.path.splitext(file_path)[1].lower()
         if ext in ['.mp4', '.mov', '.avi', '.mkv', '.m4v']:
             return self._process_video(file_path)
         else:
@@ -59,17 +55,23 @@ class Detector:
     def _process_image(self, image_path):
         image_cv = cv2.imread(image_path)
         if image_cv is None: return {}
-        image_pil = Image.fromarray(cv2.cvtColor(image_cv, cv2.COLOR_BGR2RGB))
         
+        # Face
         faces = self.face_app.get(image_cv)
-        objs = self._run_florence_on_frame(image_pil)
-        
         self._save_face_crops(faces, image_cv, image_path)
+        
+        # YOLO (conf=0.05 is better for massive vocabulary lists)
+        results = self.yolo_model.predict(image_path, conf=0.05, verbose=False)
+        
+        objs = set()
+        for r in results:
+            for c in r.boxes.cls:
+                objs.add(self.yolo_model.names[int(c)])
 
         return {
             "status": "SUCCESS",
             "faces": [{"det_score": float(f.det_score)} for f in faces],
-            "objects": objs,
+            "objects": list(objs),
             "is_video": False
         }
 
@@ -83,14 +85,13 @@ class Detector:
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         duration = total_frames / fps
         
+        # 5-2-1 Logic
         if duration > 30: interval_sec = 5
         elif duration > 5: interval_sec = 2
         else: interval_sec = 1
             
         frame_interval = int(fps * interval_sec)
         if frame_interval < 1: frame_interval = 1
-        
-        print(f"   Duration: {duration:.1f}s -> Sampling every {interval_sec}s")
         
         all_objects = set()
         frame_idx = 0
@@ -100,9 +101,11 @@ class Detector:
             if not ret: break
             
             if frame_idx % frame_interval == 0:
-                image_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-                objs = self._run_florence_on_frame(image_pil)
-                all_objects.update(objs)
+                # YOLO handles numpy arrays (frames) natively
+                results = self.yolo_model.predict(frame, conf=0.05, verbose=False)
+                for r in results:
+                    for c in r.boxes.cls:
+                        all_objects.add(self.yolo_model.names[int(c)])
             
             frame_idx += 1
             
@@ -113,20 +116,6 @@ class Detector:
             "objects": list(all_objects),
             "is_video": True
         }
-
-    def _run_florence_on_frame(self, image_pil):
-        task_prompt = "<OD>"
-        inputs = self.florence_processor(text=task_prompt, images=image_pil, return_tensors="pt").to(self.device, torch.float16)
-        
-        generated_ids = self.florence_model.generate(
-            input_ids=inputs["input_ids"], pixel_values=inputs["pixel_values"],
-            max_new_tokens=1024, do_sample=False, num_beams=3
-        )
-        generated_text = self.florence_processor.batch_decode(generated_ids, skip_special_tokens=False)[0]
-        parsed = self.florence_processor.post_process_generation(
-            generated_text, task=task_prompt, image_size=(image_pil.width, image_pil.height)
-        )
-        return [label.lower() for label in parsed.get('<OD>', {}).get('labels', [])]
 
     def _save_face_crops(self, faces, img, image_path):
         faces_dir = os.path.join(self.base_dir, "faces_crop")
