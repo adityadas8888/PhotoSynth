@@ -28,7 +28,7 @@ dependencies = [
     # --- Image & File Handling ---
     "Pillow>=11.0.0",
     "numpy<2.0.0",
-"opencv-python-headless>=4.10.0",
+    "opencv-python-headless>=4.10.0",
     "pyexiftool>=0.5.0",
     "imagehash>=4.3.1",
 
@@ -44,6 +44,7 @@ dependencies = [
     # --- NEW: The Stable Detector ---
     "ultralytics>=8.2.0",
 
+"clip @ git+https://github.com/openai/CLIP.git",
     # --- Face Analysis ---
     "insightface>=0.7.3",
     "onnxruntime-gpu>=1.19.0 ; sys_platform == 'linux'",
