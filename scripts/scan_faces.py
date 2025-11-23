@@ -7,7 +7,7 @@ from photosynth.pipeline.detector import Detector
 from photosynth.utils.hashing import calculate_content_hash
 
 # Config
-NAS_PATH = os.path.expanduser("~/personal/nas/photo")
+NAS_PATH = os.path.expanduser("~/personal/nas/video/TEST")
 EXTENSIONS = ['.jpg', '.jpeg', '.png', '.arw']
 
 def main():
