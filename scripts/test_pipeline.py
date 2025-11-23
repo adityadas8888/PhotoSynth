@@ -1,68 +1,45 @@
 #!/usr/bin/env python3
-"""
-Manual test script for PhotoSynth pipeline.
-Processes files in ~/personal/nas/video/TEST folder.
-"""
-
 import os
 import sys
 from pathlib import Path
 from photosynth.tasks import run_detection_pass
 
-# Test directory
-TEST_DIR = Path.home() / "personal/nas/video/TEST"
-
-# File extensions to process
-EXTENSIONS = ['.jpg', '.jpeg', '.png', '.arw', '.raw', '.tiff', '.heic', '.mp4', '.mov']
+# Config
+TEST_DIR = Path(os.path.expanduser("~/personal/nas/video/TEST"))
+EXTENSIONS = ['.jpg', '.jpeg', '.png', '.mp4', '.mov']
 
 def should_skip(path):
-    path_str = str(path)
-    # Strict exclude
-    if '@eaDir' in path_str: return True
-    if '/.' in path_str: return True
-    if '#recycle' in path_str: return True
+    """Strict exclusions for Synology/System files."""
+    p = str(path)
+    if '@eaDir' in p: return True
+    if '/.' in p: return True       # Hidden files .DS_Store
+    if '#recycle' in p: return True
     return False
-
-def find_images(directory):
-    """Find all images in directory."""
-    images = []
-    for ext in EXTENSIONS:
-        images.extend(directory.rglob(f'*{ext}'))
-        images.extend(directory.rglob(f'*{ext.upper()}'))
-    
-    # Filter out skipped paths
-    images = [img for img in images if not should_skip(img)]
-    return sorted(images)
 
 def main():
     if not TEST_DIR.exists():
-        print(f"❌ Test directory not found: {TEST_DIR}")
-        print(f"   Create it with: mkdir -p {TEST_DIR}")
+        print(f"❌ Directory not found: {TEST_DIR}")
         sys.exit(1)
-    
-    images = find_images(TEST_DIR)
-    
-    if not images:
-        print(f"No images found in {TEST_DIR}")
-        print(f"Add some test images to get started!")
-        sys.exit(0)
-    
-    print(f"📸 Found {len(images)} images in {TEST_DIR}")
-    print(f"Processing...\n")
-    
-    for i, img_path in enumerate(images, 1):
-        print(f"[{i}/{len(images)}] {img_path.name}")
-        try:
-            # Trigger the pipeline
-            result = run_detection_pass.delay(str(img_path))
-            print(f"   ✅ Job queued: {result.id}")
-        except Exception as e:
-            print(f"   ❌ Error: {e}")
-    
-    print(f"\n✅ All jobs submitted!")
-    print(f"Check logs: tail -f ~/personal/PhotoSynth/logs/worker.log")
 
+    files = []
+    for ext in EXTENSIONS:
+        files.extend(TEST_DIR.rglob(f"*{ext}"))
+        files.extend(TEST_DIR.rglob(f"*{ext.upper()}"))
+    
+    # Filter
+    files = [f for f in files if not should_skip(f)]
+    files.sort()
 
+    print(f"📸 Found {len(files)} test files.")
+    print("🚀 Injecting into Daily Pipeline...")
+
+    for i, f in enumerate(files, 1):
+        print(f"[{i}/{len(files)}] Queuing: {f.name}")
+        
+        # This triggers the full chain: 3090 Detect -> 5090 Caption
+        run_detection_pass.delay(str(f))
+
+    print("\n✅ Jobs submitted! Watch logs on both machines.")
 
 if __name__ == "__main__":
     main()
