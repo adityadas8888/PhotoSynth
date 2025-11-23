@@ -30,15 +30,21 @@ class Detector:
         # 2. YOLO-World (Only if enabled)
         if self.enable_yolo:
             print(f"[{self.device}] 🦅 Loading YOLO-World...")
-            self.yolo_model = YOLOWorld('yolov8l-worldv2.pt')
+            # Check local path first
+            local_yolo = os.path.join(self.models_dir, 'yolov8l-worldv2.pt')
+            if os.path.exists(local_yolo):
+                self.yolo_model = YOLOWorld(local_yolo)
+            else:
+                self.yolo_model = YOLOWorld('yolov8l-worldv2.pt')
+                
             self.yolo_model.to(self.device)
             
+            # FIX: Ensure this runs ONLY if YOLO is enabled
             if os.path.exists(self.vocab_path):
                 with open(self.vocab_path, 'r') as f:
                     vocab = json.load(f)
                 self.yolo_model.set_classes(vocab)
                 print(f"   📚 YOLO Loaded with {len(vocab)} classes")
-        self.yolo_model.set_classes(vocab)
 
     def _heal_path(self, file_path):
         """Fixes path mismatch between computers."""
@@ -50,42 +56,33 @@ class Detector:
         return file_path
 
     def _identify_faces(self, faces):
-        """
-        Compares detected faces against the Cluster DB to find names.
-        Returns a list of names found (e.g. ['Aditya', 'Ankita']).
-        """
+        """Compares detected faces against the Cluster DB."""
         from photosynth.db import PhotoSynthDB
         try:
             db = PhotoSynthDB()
-            known_faces = db.get_known_faces() # Returns [(cluster_id, name, embedding), ...]
-        except:
-            return [] # DB might be locked or empty
+            known_faces = db.get_known_faces() 
+        except Exception:
+            return [] 
 
         if not known_faces: return []
 
         found_names = set()
-        
         for face in faces:
             curr_emb = face.embedding
             best_score = 0.0
             best_name = None
-            
             for _, name, known_emb in known_faces:
-                # Cosine Similarity
                 score = np.dot(curr_emb, known_emb) / (np.linalg.norm(curr_emb) * np.linalg.norm(known_emb))
-                if score > 0.55 and score > best_score: # 0.55 is a safe threshold
+                if score > 0.55 and score > best_score: 
                     best_score = score
                     best_name = name
-            
             if best_name and best_name != "Unknown":
                 found_names.add(best_name)
-                
         return list(found_names)
 
     def run_detection(self, file_path):
         """Entry point for Daily Operations."""
         print(f"Processing {os.path.basename(file_path)}...")
-        
         ext = os.path.splitext(file_path)[1].lower()
         if ext in ['.mp4', '.mov', '.avi', '.mkv', '.m4v']:
             return self._process_video(file_path)
@@ -99,9 +96,9 @@ class Detector:
         
         # 1. Face Detect
         faces = self.face_app.get(image_cv)
-        self._save_face_crops(faces, image_cv, image_path)
+        # self._save_face_crops(faces, image_cv, image_path) # Optional: Enable if you want crops for every file
         
-        # 2. Identify People (The New "Daily" Capability)
+        # 2. Identify People
         known_people = self._identify_faces(faces)
         
         # 3. YOLO Detect (Only if enabled)
@@ -114,31 +111,27 @@ class Detector:
         
         return {
             "status": "SUCCESS",
-            "faces": [f.embedding.tolist() for f in faces], # Embeddings for harvest
+            "faces": [f.embedding.tolist() for f in faces], 
             "face_count": len(faces),
-            "known_people": known_people, # Pass this to VLM!
+            "known_people": known_people,
             "objects": list(set(objs)),
             "is_video": False
         }
 
     def _process_video(self, video_path):
         print(f"🎬 Video detected. Sampling...")
-        
-        # 1. Heal Path (Crucial for 3090 -> 5090 sharing)
         video_path = self._heal_path(video_path)
-        
         cap = cv2.VideoCapture(video_path)
+        
         if not cap.isOpened():
             print(f"❌ Could not open video: {video_path}")
             return {"status": "ERROR", "faces": [], "objects": [], "known_people": []}
-        
+
         raw_fps = cap.get(cv2.CAP_PROP_FPS)
         fps = raw_fps if raw_fps > 0 else 30.0
-        
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         duration = total_frames / fps
         
-        # --- 5-2-1 Sampling Logic ---
         if duration > 30: interval_sec = 5
         elif duration > 5: interval_sec = 2
         else: interval_sec = 1
@@ -157,31 +150,23 @@ class Detector:
             if not ret: break
             
             if frame_idx % frame_interval == 0:
-                # 2. Detect Faces & People
-                # InsightFace expects BGR (which OpenCV provides), so pass 'frame' directly
                 faces = self.face_app.get(frame)
-                
-                # Identify who they are
                 names = self._identify_faces(faces)
                 all_people.update(names)
                 
-                # 3. Detect Objects (YOLO) - Only if enabled
                 if self.enable_yolo:
-                    # YOLO handles numpy arrays natively
                     results = self.yolo_model.predict(frame, conf=0.05, verbose=False)
                     for r in results:
                         for c in r.boxes.cls:
                             all_objects.add(self.yolo_model.names[int(c)])
-            
             frame_idx += 1
             
         cap.release()
-        
         return {
             "status": "SUCCESS",
-            "faces": [], # We don't save raw embeddings for video (too many)
-            "known_people": list(all_people), # Pass names ("Aditya") to VLM
+            "faces": [], 
             "objects": list(all_objects),
+            "known_people": list(all_people),
             "is_video": True
         }
 
