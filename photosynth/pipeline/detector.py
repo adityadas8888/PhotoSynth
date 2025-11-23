@@ -67,13 +67,16 @@ class Detector:
             "is_video": False
         }
 
-    def _process_video(self, video_path):
+def _process_video(self, video_path):
         print(f"🎬 Video detected. Calculating sampling interval...")
         cap = cv2.VideoCapture(video_path)
         
-        fps = cap.get(cv2.CAP_PROP_FPS)
+        raw_fps = cap.get(cv2.CAP_PROP_FPS)
+        # FIX: Force a safe FPS if the file reports 0
+        fps = raw_fps if raw_fps > 0 else 30.0
+        
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        duration = total_frames / (fps if fps > 0 else 30)
+        duration = total_frames / fps
         
         # 5-2-1 Logic
         if duration > 30: interval_sec = 5
@@ -81,6 +84,9 @@ class Detector:
         else: interval_sec = 1
             
         frame_interval = int(fps * interval_sec)
+        # Safety: Ensure we never have an interval of 0
+        if frame_interval < 1: frame_interval = 1 
+        
         print(f"   Duration: {duration:.1f}s -> Sampling every {interval_sec}s")
         
         all_objects = set()
