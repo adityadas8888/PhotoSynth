@@ -6,15 +6,17 @@ from unittest.mock import MagicMock
 from PIL import Image
 from insightface.app import FaceAnalysis
 
-# --- 🛡️ CRITICAL FIX: MOCK FLASH ATTENTION ---
-# We inject this BEFORE importing transformers so the remote code loads safely.
-# This forces Florence-2 to use PyTorch's internal SDPA (which is supported).
+# --- 🛡️ CRITICAL FIX: ROBUST MOCK ---
+# We inject a dummy module with __spec__ set to None.
+# 1. 'import flash_attn' succeeds (preventing Florence-2 crash).
+# 2. 'find_spec' returns None (telling Transformers to NOT use it and fallback to SDPA).
 if "flash_attn" not in sys.modules:
-    sys.modules["flash_attn"] = MagicMock()
+    dummy_flash = types.ModuleType("flash_attn")
+    dummy_flash.__spec__ = None 
+    sys.modules["flash_attn"] = dummy_flash
 
 # NOW import transformers
-from transformers import AutoProcessor, AutoModelForCausalLM 
-
+from transformers import AutoProcessor, AutoModelForCausalLM
 class Detector:
     def __init__(self):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
