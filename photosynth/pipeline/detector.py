@@ -2,21 +2,26 @@ import cv2
 import os
 import torch
 import sys
+import types
 from unittest.mock import MagicMock
 from PIL import Image
 from insightface.app import FaceAnalysis
 
-# --- 🛡️ CRITICAL FIX: ROBUST MOCK ---
-# We inject a dummy module with __spec__ set to None.
-# 1. 'import flash_attn' succeeds (preventing Florence-2 crash).
-# 2. 'find_spec' returns None (telling Transformers to NOT use it and fallback to SDPA).
+# --- 🛡️ SAFETY PATCH --------------------------------------------------------
+# 1. Create a dummy flash_attn module so Florence-2 code doesn't crash on import
 if "flash_attn" not in sys.modules:
-    dummy_flash = types.ModuleType("flash_attn")
-    dummy_flash.__spec__ = None 
-    sys.modules["flash_attn"] = dummy_flash
+    sys.modules["flash_attn"] = MagicMock()
 
-# NOW import transformers
-from transformers import AutoProcessor, AutoModelForCausalLM
+# 2. Force Transformers to IGNORE it.
+# We overwrite the check functions so they return False immediately.
+# This prevents the 'ValueError: __spec__ is not set' crash AND forces SDPA usage.
+import transformers.utils.import_utils
+transformers.utils.import_utils.is_flash_attn_2_available = lambda: False
+transformers.utils.import_utils.is_flash_attn_available = lambda: False
+# ----------------------------------------------------------------------------
+
+from transformers import AutoProcessor, AutoModelForCausalLM 
+
 class Detector:
     def __init__(self):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -38,11 +43,13 @@ class Detector:
         model_path = os.path.join(self.models_dir, "florence_2_large")
         
         # Load Local Only
+        # attn_implementation="sdpa" explicitly tells it to use the built-in PyTorch attention
         self.florence_model = AutoModelForCausalLM.from_pretrained(
             model_path, 
             trust_remote_code=True, 
             local_files_only=True, 
-            torch_dtype=torch.float16
+            torch_dtype=torch.float16,
+            attn_implementation="sdpa" 
         ).to(self.device)
         
         self.florence_processor = AutoProcessor.from_pretrained(
