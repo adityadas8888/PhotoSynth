@@ -2,24 +2,32 @@ import cv2
 import os
 import torch
 import sys
-import types
-from unittest.mock import MagicMock
 from PIL import Image
 from insightface.app import FaceAnalysis
 
-# --- 🛡️ SAFETY PATCH --------------------------------------------------------
-# 1. Create a dummy flash_attn module so Florence-2 code doesn't crash on import
+# --- 🛡️ NUCLEAR OPTION FIX --------------------------------------------------
+# We strictly forbid Transformers from even checking for Flash Attention.
+# This bypasses the entire 'importlib' crash.
+
+# 1. Create a dummy module just in case Florence-2 code imports it directly
+from unittest.mock import MagicMock
 if "flash_attn" not in sys.modules:
     sys.modules["flash_attn"] = MagicMock()
 
-# 2. Force Transformers to IGNORE it.
-# We overwrite the check functions so they return False immediately.
-# This prevents the 'ValueError: __spec__ is not set' crash AND forces SDPA usage.
+# 2. Patch Transformers internals BEFORE importing the main library
+# We must import the specific utility module first
 import transformers.utils.import_utils
+
+# Force the check to always return False
 transformers.utils.import_utils.is_flash_attn_2_available = lambda: False
 transformers.utils.import_utils.is_flash_attn_available = lambda: False
+
+# Also patch the variable cache if it exists
+transformers.utils.import_utils._is_flash_attn_2_available = False
+transformers.utils.import_utils._is_flash_attn_available = False
 # ----------------------------------------------------------------------------
 
+# NOW it is safe to import the rest
 from transformers import AutoProcessor, AutoModelForCausalLM 
 
 class Detector:
@@ -42,14 +50,13 @@ class Detector:
         print(f"[{self.device}] 💃 Loading Florence-2-Large...")
         model_path = os.path.join(self.models_dir, "florence_2_large")
         
-        # Load Local Only
-        # attn_implementation="sdpa" explicitly tells it to use the built-in PyTorch attention
+        # Load Local Only + Explicit SDPA
         self.florence_model = AutoModelForCausalLM.from_pretrained(
             model_path, 
             trust_remote_code=True, 
             local_files_only=True, 
             torch_dtype=torch.float16,
-            attn_implementation="sdpa" 
+            attn_implementation="sdpa"  # Force PyTorch SDPA
         ).to(self.device)
         
         self.florence_processor = AutoProcessor.from_pretrained(
@@ -94,7 +101,6 @@ class Detector:
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         duration = total_frames / fps
         
-        # 5-2-1 Logic
         if duration > 30: interval_sec = 5
         elif duration > 5: interval_sec = 2
         else: interval_sec = 1
