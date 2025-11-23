@@ -40,19 +40,16 @@ def get_db():
         db_instance = PhotoSynthDB()
     return db_instance
 
-import imagehash
-from PIL import Image
-
-# ... (imports)
-
-def calculate_phash(filepath):
-    """Generates a Perceptual Hash (pHash) for DB lookup."""
-    try:
-        img = Image.open(filepath)
-        return str(imagehash.phash(img))
-    except Exception as e:
-        print(f"⚠️ Could not calculate pHash for {filepath}: {e}")
-        return f"ERR_{os.path.basename(filepath)}"
+def calculate_file_hash(filepath):
+    """Quick SHA256 hash for DB lookup."""
+    hasher = hashlib.sha256()
+    with open(filepath, 'rb') as f:
+        # Read first 64KB is usually enough for quick check, but full hash is safer for dedup
+        # For speed in task, let's trust the watcher passed a hash or re-calc full if needed.
+        # Here we re-calc full to be safe.
+        for chunk in iter(lambda: f.read(65536), b''):
+            hasher.update(chunk)
+    return hasher.hexdigest()
 
 # --- Task 1: Runs on 3090 PC (Detection) ---
 @app.task(name='photosynth.tasks.run_detection_pass')
@@ -60,7 +57,7 @@ def run_detection_pass(file_path):
     print(f"3090 DETECT: Starting job for {file_path}")
     
     db = get_db()
-    file_hash = calculate_phash(file_path)
+    file_hash = calculate_file_hash(file_path)
     
     # 1. Check DB: Skip if already processed
     status = db.check_status(file_hash)
@@ -103,7 +100,7 @@ def run_vlm_captioning(job_data):
     # Parse Payload
     if isinstance(job_data, str):
         file_path = job_data
-        file_hash = calculate_phash(file_path) # Recalc if lost
+        file_hash = calculate_file_hash(file_path) # Recalc if lost
         det_results = {}
     else:
         file_path = job_data.get('file_path')

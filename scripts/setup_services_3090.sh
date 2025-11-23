@@ -19,6 +19,7 @@ Wants=redis-server.service
 [Service]
 User=$USER
 WorkingDirectory=$PROJECT_DIR
+EnvironmentFile=/home/aditya/personal/PhotoSynth/.secretsenv
 ExecStart=/home/aditya/.local/bin/uv run celery -A photosynth.tasks worker --loglevel=info -Q detection_queue,vlm_queue -n worker_3090 --concurrency=1
 Restart=always
 RestartSec=10
