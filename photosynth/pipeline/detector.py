@@ -2,32 +2,39 @@ import cv2
 import os
 import torch
 import sys
+import types
+import importlib.util
+from unittest.mock import MagicMock
 from PIL import Image
 from insightface.app import FaceAnalysis
 
-# --- 🛡️ NUCLEAR OPTION FIX --------------------------------------------------
-# We strictly forbid Transformers from even checking for Flash Attention.
-# This bypasses the entire 'importlib' crash.
-
-# 1. Create a dummy module just in case Florence-2 code imports it directly
-from unittest.mock import MagicMock
+# --- 🛡️ ROBUST FLASH ATTENTION MOCK -----------------------------------------
+# We create a "Real Fake" module that satisfies Python's import system (importlib).
 if "flash_attn" not in sys.modules:
-    sys.modules["flash_attn"] = MagicMock()
+    # 1. Create a proper Module object (not just a Mock)
+    dummy_flash = types.ModuleType("flash_attn")
+    
+    # 2. Create a dummy spec so importlib doesn't crash inspecting it
+    # This tells Python: "Yes, this is a valid module, stop asking."
+    dummy_spec = importlib.util.spec_from_loader("flash_attn", loader=None)
+    dummy_flash.__spec__ = dummy_spec
+    dummy_flash.__file__ = "dummy_flash_attn.py"
+    dummy_flash.__path__ = []
 
-# 2. Patch Transformers internals BEFORE importing the main library
-# We must import the specific utility module first
+    # 3. Inject MagicMock for any internal attributes code might access
+    # (e.g. flash_attn.flash_attn_func)
+    dummy_flash.flash_attn_func = MagicMock()
+    
+    # 4. Inject into system
+    sys.modules["flash_attn"] = dummy_flash
+
+# 5. Force Transformers to use SDPA (Standard Attention)
+# We monkeypatch the check to return False, so it falls back to PyTorch native
 import transformers.utils.import_utils
-
-# Force the check to always return False
 transformers.utils.import_utils.is_flash_attn_2_available = lambda: False
 transformers.utils.import_utils.is_flash_attn_available = lambda: False
-
-# Also patch the variable cache if it exists
-transformers.utils.import_utils._is_flash_attn_2_available = False
-transformers.utils.import_utils._is_flash_attn_available = False
 # ----------------------------------------------------------------------------
 
-# NOW it is safe to import the rest
 from transformers import AutoProcessor, AutoModelForCausalLM 
 
 class Detector:
@@ -101,6 +108,7 @@ class Detector:
         total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
         duration = total_frames / fps
         
+        # 5-2-1 Logic
         if duration > 30: interval_sec = 5
         elif duration > 5: interval_sec = 2
         else: interval_sec = 1
