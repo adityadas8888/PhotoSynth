@@ -1,16 +1,19 @@
 import cv2
 import os
 import torch
-from PIL import Image
-from insightface.app import FaceAnalysis
-from transformers import AutoProcessor, AutoModelForCausalLM 
 import sys
 from unittest.mock import MagicMock
+from PIL import Image
+from insightface.app import FaceAnalysis
 
-# 🛡️ SAFETY: Mock flash_attn so Florence-2 loads on Fedora/Ubuntu without compiling
-# This forces it to fall back to PyTorch's native SDPA (which is fast anyway)
+# --- 🛡️ CRITICAL FIX: MOCK FLASH ATTENTION ---
+# We inject this BEFORE importing transformers so the remote code loads safely.
+# This forces Florence-2 to use PyTorch's internal SDPA (which is supported).
 if "flash_attn" not in sys.modules:
     sys.modules["flash_attn"] = MagicMock()
+
+# NOW import transformers
+from transformers import AutoProcessor, AutoModelForCausalLM 
 
 class Detector:
     def __init__(self):
@@ -32,8 +35,7 @@ class Detector:
         print(f"[{self.device}] 💃 Loading Florence-2-Large...")
         model_path = os.path.join(self.models_dir, "florence_2_large")
         
-        # We load from local folder, so the ID matters less here, but good to be consistent
-        # Use 'florence-community/Florence-2-large' if you ever fallback to download
+        # Load Local Only
         self.florence_model = AutoModelForCausalLM.from_pretrained(
             model_path, 
             trust_remote_code=True, 
@@ -64,7 +66,6 @@ class Detector:
         faces = self.face_app.get(image_cv)
         objs = self._run_florence_on_frame(image_pil)
         
-        # Save crops logic (simplified)
         self._save_face_crops(faces, image_cv, image_path)
 
         return {
@@ -75,48 +76,46 @@ class Detector:
         }
 
     def _process_video(self, video_path):
-            print(f"🎬 Video detected. Calculating sampling interval...")
-            cap = cv2.VideoCapture(video_path)
+        print(f"🎬 Video detected. Calculating sampling interval...")
+        cap = cv2.VideoCapture(video_path)
+        
+        raw_fps = cap.get(cv2.CAP_PROP_FPS)
+        fps = raw_fps if raw_fps > 0 else 30.0
+        
+        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        duration = total_frames / fps
+        
+        # 5-2-1 Logic
+        if duration > 30: interval_sec = 5
+        elif duration > 5: interval_sec = 2
+        else: interval_sec = 1
             
-            raw_fps = cap.get(cv2.CAP_PROP_FPS)
-            # FIX: Force a safe FPS if the file reports 0
-            fps = raw_fps if raw_fps > 0 else 30.0
+        frame_interval = int(fps * interval_sec)
+        if frame_interval < 1: frame_interval = 1
+        
+        print(f"   Duration: {duration:.1f}s -> Sampling every {interval_sec}s")
+        
+        all_objects = set()
+        frame_idx = 0
+        
+        while cap.isOpened():
+            ret, frame = cap.read()
+            if not ret: break
             
-            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            duration = total_frames / fps
+            if frame_idx % frame_interval == 0:
+                image_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+                objs = self._run_florence_on_frame(image_pil)
+                all_objects.update(objs)
             
-            # 5-2-1 Logic
-            if duration > 30: interval_sec = 5
-            elif duration > 5: interval_sec = 2
-            else: interval_sec = 1
-                
-            frame_interval = int(fps * interval_sec)
-            # Safety: Ensure we never have an interval of 0
-            if frame_interval < 1: frame_interval = 1 
+            frame_idx += 1
             
-            print(f"   Duration: {duration:.1f}s -> Sampling every {interval_sec}s")
-            
-            all_objects = set()
-            frame_idx = 0
-            
-            while cap.isOpened():
-                ret, frame = cap.read()
-                if not ret: break
-                
-                if frame_idx % frame_interval == 0:
-                    image_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-                    objs = self._run_florence_on_frame(image_pil)
-                    all_objects.update(objs)
-                
-                frame_idx += 1
-                
-            cap.release()
-            return {
-                "status": "SUCCESS",
-                "faces": [], 
-                "objects": list(all_objects),
-                "is_video": True
-            }
+        cap.release()
+        return {
+            "status": "SUCCESS",
+            "faces": [], 
+            "objects": list(all_objects),
+            "is_video": True
+        }
 
     def _run_florence_on_frame(self, image_pil):
         task_prompt = "<OD>"
@@ -132,7 +131,6 @@ class Detector:
         return [label.lower() for label in parsed.get('<OD>', {}).get('labels', [])]
 
     def _save_face_crops(self, faces, img, image_path):
-        # Helper to save faces (kept your original logic structure)
         faces_dir = os.path.join(self.base_dir, "faces_crop")
         os.makedirs(faces_dir, exist_ok=True)
         for i, face in enumerate(faces):
