@@ -23,12 +23,25 @@
         }
 
         .card {
-            transition: all 0.3s ease;
+            transition: all 0.2s ease;
         }
 
         .card:hover {
             transform: translateY(-2px);
             box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Dragging Visuals */
+        .dragging {
+            opacity: 0.5;
+            border: 2px dashed #60a5fa;
+            transform: scale(0.95);
+        }
+
+        .drag-over {
+            background: rgba(59, 130, 246, 0.2);
+            border: 2px solid #3b82f6;
+            transform: scale(1.02);
         }
     </style>
 </head>
@@ -40,18 +53,17 @@
         const { useState, useEffect } = React;
 
         function App() {
-            const [stats, setStats] = useState({ total_files: 0, processed: 0, pending: 0 });
+            const [stats, setStats] = useState({ total_files: 0, processed: 0, pending: 0, faces_found: 0 });
             const [clusters, setClusters] = useState([]);
+            const [draggedId, setDraggedId] = useState(null);
 
             const fetchData = async () => {
                 try {
                     const statsRes = await fetch('/stats');
-                    const statsData = await statsRes.json();
-                    setStats(statsData);
+                    setStats(await statsRes.json());
 
                     const clustersRes = await fetch('/clusters');
-                    const clustersData = await clustersRes.json();
-                    setClusters(clustersData);
+                    setClusters(await clustersRes.json());
                 } catch (e) { console.error(e); }
             };
 
@@ -63,12 +75,30 @@
 
             const handleRename = async (clusterId, newName) => {
                 if (!newName) return;
-                await fetch('/tag/cluster', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ cluster_id: clusterId, name: newName })
-                });
-                fetchData(); // Refresh
+                try {
+                    await fetch('/tag/cluster', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ cluster_id: clusterId, name: newName })
+                    });
+                    // Optimistic update or just refresh
+                    fetchData();
+                } catch (e) { console.error(e); }
+            };
+
+            // --- Drag & Drop Logic ---
+            const handleDrop = async (targetCluster) => {
+                if (draggedId === null || draggedId === targetCluster.id) return;
+
+                const sourceCluster = clusters.find(c => c.id === draggedId);
+                const targetName = targetCluster.name;
+
+                if (confirm(`Merge cluster "${sourceCluster.name}" into "${targetName}"?`)) {
+                    // We rename the SOURCE to match the TARGET.
+                    // The backend will detect the duplicate name and perform the merge.
+                    await handleRename(sourceCluster.id, targetName);
+                }
+                setDraggedId(null);
             };
 
             return (
@@ -83,15 +113,26 @@
                         <div className="flex space-x-4">
                             <StatusCard label="Files" value={stats.total_files} color="text-white" />
                             <StatusCard label="Processed" value={stats.processed} color="text-green-400" />
-                            <StatusCard label="Faces" value={stats.faces_found || 0} color="text-purple-400" />
+                            <StatusCard label="Faces" value={stats.faces_found} color="text-purple-400" />
                         </div>
                     </header>
 
                     <div className="space-y-6">
-                        <h2 className="text-2xl font-semibold">👤 Face Clusters</h2>
-                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        <h2 className="text-2xl font-semibold flex items-center justify-between">
+                            <span>👤 Face Clusters</span>
+                            <span className="text-sm text-slate-500 font-normal">
+                                Tip: Drag a cluster onto another to merge them.
+                            </span>
+                        </h2>
+                        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                             {clusters.map(cluster => (
-                                <ClusterCard key={cluster.id} cluster={cluster} onRename={handleRename} />
+                                <ClusterCard
+                                    key={cluster.id}
+                                    cluster={cluster}
+                                    onRename={handleRename}
+                                    setDraggedId={setDraggedId}
+                                    onDrop={() => handleDrop(cluster)}
+                                />
                             ))}
                             {clusters.length === 0 && <p className="text-slate-500">No clusters found yet.</p>}
                         </div>
@@ -109,33 +150,81 @@
             );
         }
 
-        function ClusterCard({ cluster, onRename }) {
+        function ClusterCard({ cluster, onRename, setDraggedId, onDrop }) {
             const [nameInput, setNameInput] = useState("");
+            const [isDragOver, setIsDragOver] = useState(false);
+
+            const handleDragStart = (e) => {
+                setDraggedId(cluster.id);
+                e.dataTransfer.effectAllowed = "move";
+                // Make the element transparent while dragging
+                e.target.classList.add("dragging");
+            };
+
+            const handleDragEnd = (e) => {
+                e.target.classList.remove("dragging");
+                setDraggedId(null);
+            };
+
+            const handleDragOver = (e) => {
+                e.preventDefault(); // Allow dropping
+                setIsDragOver(true);
+            };
+
+            const handleDragLeave = () => setIsDragOver(false);
+
+            const handleDropEvent = (e) => {
+                e.preventDefault();
+                setIsDragOver(false);
+                onDrop();
+            };
 
             return (
-                <div className="glass p-4 rounded-xl card">
+                <div
+                    className={`glass p-4 rounded-xl card ${isDragOver ? 'drag-over' : ''}`}
+                    draggable="true"
+                    onDragStart={handleDragStart}
+                    onDragEnd={handleDragEnd}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onDrop={handleDropEvent}
+                >
                     <div className="flex justify-between items-start mb-3">
-                        <h3 className="font-bold text-lg text-white">{cluster.name}</h3>
+                        <div>
+                            <h3 className="font-bold text-lg text-white truncate max-w-[150px]">
+                                {cluster.name}
+                            </h3>
+                            <div className="text-xs text-slate-400">ID: {cluster.id}</div>
+                        </div>
                         <span className="bg-blue-500/20 text-blue-300 text-xs px-2 py-1 rounded">
-                            ID: {cluster.id}
+                            {cluster.faces.length} Photos
                         </span>
                     </div>
-                    <div className="flex space-x-2 overflow-x-auto pb-2 h-20">
+
+                    {/* Face Thumbnails Row */}
+                    <div className="flex space-x-2 overflow-x-auto pb-2 h-24 scrollbar-hide">
                         {cluster.faces.map((face, i) => (
-                            <img key={i} src={face.url} className="w-16 h-16 rounded-lg object-cover border border-slate-600" />
+                            <img
+                                key={i}
+                                src={face.url}
+                                className="w-20 h-20 rounded-lg object-cover border border-slate-600 shrink-0"
+                                loading="lazy"
+                            />
                         ))}
                     </div>
-                    <div className="mt-3 flex space-x-2">
+
+                    <div className="mt-4 flex space-x-2">
                         <input
                             type="text"
                             placeholder="Name..."
-                            className="bg-slate-800 border border-slate-700 rounded px-3 py-1 text-sm w-full focus:outline-none text-white"
+                            className="bg-slate-800 border border-slate-700 rounded px-3 py-1 text-sm w-full focus:outline-none text-white focus:border-blue-500 transition-colors"
                             value={nameInput}
                             onChange={(e) => setNameInput(e.target.value)}
+                            onKeyDown={(e) => { if (e.key === 'Enter') { onRename(cluster.id, nameInput); setNameInput(""); } }}
                         />
                         <button
                             onClick={() => { onRename(cluster.id, nameInput); setNameInput(""); }}
-                            className="bg-blue-600 hover:bg-blue-500 px-3 py-1 rounded text-sm font-medium text-white">
+                            className="bg-blue-600 hover:bg-blue-500 px-3 py-1 rounded text-sm font-medium text-white transition-colors">
                             Save
                         </button>
                     </div>

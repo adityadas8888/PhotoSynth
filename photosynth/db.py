@@ -4,7 +4,8 @@ import os
 import numpy as np
 import io
 
-DB_PATH = os.path.expanduser("~/personal/PhotoSynth/photosynth.db")
+# --- 1. SHARED NAS PATH ---
+DB_PATH = os.path.expanduser("~/personal/nas/photosynth.db")
 
 # --- Numpy Adapters ---
 def adapt_array(arr):
@@ -27,8 +28,14 @@ class PhotoSynthDB:
         self._init_db()
 
     def _init_db(self):
+        # Ensure NAS folder exists
+        os.makedirs(os.path.dirname(self.db_path), exist_ok=True)
+        
         conn = self.get_connection()
         c = conn.cursor()
+        
+        # --- 2. WAL MODE (Critical for NAS concurrency) ---
+        c.execute("PRAGMA journal_mode=WAL;")
         
         c.execute('''
             CREATE TABLE IF NOT EXISTS media_files (
@@ -61,7 +68,8 @@ class PhotoSynthDB:
         conn.close()
 
     def get_connection(self):
-        return sqlite3.connect(self.db_path, detect_types=sqlite3.PARSE_DECLTYPES)
+        # --- 3. TIMEOUT (Prevents locks on slow network) ---
+        return sqlite3.connect(self.db_path, timeout=30.0, detect_types=sqlite3.PARSE_DECLTYPES)
 
     def register_file(self, file_hash, file_path):
         conn = self.get_connection()
@@ -89,7 +97,6 @@ class PhotoSynthDB:
             params.append(json.dumps(concepts))
             
         params.append(file_hash)
-        # Safe update only if row exists
         conn.execute(f"UPDATE media_files SET {', '.join(updates)} WHERE file_hash=?", params)
         conn.commit()
         conn.close()

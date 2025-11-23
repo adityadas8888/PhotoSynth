@@ -110,6 +110,38 @@ def tag_cluster(req: ClusterNameRequest):
     finally:
         conn.close()
 
+@app.post("/tag/cluster")
+def tag_cluster(req: ClusterNameRequest):
+    conn = get_db()
+    try:
+        # Check if name exists elsewhere
+        cursor = conn.execute(
+            "SELECT cluster_id FROM people WHERE name = ? AND cluster_id != ?", 
+            (req.name, req.cluster_id)
+        )
+        existing = cursor.fetchone()
+
+        if existing:
+            # --- MERGE LOGIC (This makes Drag & Drop work) ---
+            target_id = existing[0]
+            print(f"🔀 Merging Cluster {req.cluster_id} -> {target_id}")
+            
+            # Move faces
+            conn.execute("UPDATE faces SET cluster_id = ? WHERE cluster_id = ?", (target_id, req.cluster_id))
+            # Delete old cluster
+            conn.execute("DELETE FROM people WHERE cluster_id = ?", (req.cluster_id,))
+            
+            conn.commit()
+            return {"status": "merged"}
+        else:
+            # --- RENAME LOGIC ---
+            conn.execute("UPDATE people SET name = ? WHERE cluster_id = ?", (req.name, req.cluster_id))
+            conn.commit()
+            return {"status": "success"}
+            
+    finally:
+        conn.close()
+
 @app.get("/stats")
 def get_stats():
     conn = get_db()
@@ -134,3 +166,4 @@ def get_stats():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
