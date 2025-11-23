@@ -1,62 +1,54 @@
 #!/usr/bin/env python3
 import os
-import hashlib
 from pathlib import Path
 from tqdm import tqdm
 from photosynth.db import PhotoSynthDB
 from photosynth.pipeline.detector import Detector
+from photosynth.utils.hashing import calculate_content_hash
 
 # Config
-NAS_PATH = os.path.expanduser("~/personal/nas/video/TEST")
+NAS_PATH = os.path.expanduser("~/personal/nas/photo")
 EXTENSIONS = ['.jpg', '.jpeg', '.png', '.arw']
 
-def get_hash(filepath):
-    hasher = hashlib.sha256()
-    with open(filepath, 'rb') as f:
-        hasher.update(f.read(65536))
-    return hasher.hexdigest()
-
 def main():
-    print("🚀 Starting Monthly Face Harvest...")
-    
-    # Initialize Detector WITHOUT YOLO (Save VRAM/Time)
-    detector = Detector(enable_yolo=False)
+    print("🚀 Starting Visual-Hash Face Harvest...")
     db = PhotoSynthDB()
+    
+    print("   Loading DB index...")
+    conn = db.get_connection()
+    known_hashes = set(row[0] for row in conn.execute("SELECT file_hash FROM faces").fetchall())
+    conn.close()
+    
+    detector = Detector(enable_yolo=False)
     
     files = []
     for ext in EXTENSIONS:
         files.extend(Path(NAS_PATH).rglob(f"*{ext}"))
+        files.extend(Path(NAS_PATH).rglob(f"*{ext.upper()}"))
     
-    print(f"📂 Scanning {len(files)} files for faces...")
+    print(f"📂 Checking {len(files)} files...")
 
-    count = 0
+    new_count = 0
     for p in tqdm(files):
         path_str = str(p)
         if "@eaDir" in path_str: continue
         
+        # VISUAL HASH CHECK
+        f_hash = calculate_content_hash(path_str)
+        if not f_hash or f_hash in known_hashes: continue
+
         try:
-            # Only scan if not already processed/clustered? 
-            # For now, we scan everything to ensure completeness.
-            
             result = detector._process_image(path_str)
             embeddings = result.get('faces', [])
-            
             if embeddings:
-                f_hash = get_hash(path_str)
                 db.register_file(f_hash, path_str)
-                
                 for emb in embeddings:
-                    # Convert list back to numpy
                     import numpy as np
                     db.add_face(f_hash, np.array(emb, dtype=np.float32))
-                    count += 1
-                    
-        except Exception as e:
-            # print(f"Skipping {path_str}: {e}")
-            pass
+                new_count += 1
+        except: pass
 
-    print(f"✅ Harvest Complete. Found {count} faces.")
-    print("👉 Now run: uv run scripts/cluster_faces.py")
+    print(f"✅ Harvest Complete. Scanned {new_count} new files.")
 
 if __name__ == "__main__":
     main()

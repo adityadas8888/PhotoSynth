@@ -6,8 +6,7 @@ import io
 
 DB_PATH = os.path.expanduser("~/personal/PhotoSynth/photosynth.db")
 
-# --- Numpy Adapters for SQLite ---
-# Allows us to save face embeddings (lists of floats) directly into the DB
+# --- Numpy Adapters ---
 def adapt_array(arr):
     out = io.BytesIO()
     np.save(out, arr)
@@ -31,7 +30,6 @@ class PhotoSynthDB:
         conn = self.get_connection()
         c = conn.cursor()
         
-        # 1. Media Files (The Master List)
         c.execute('''
             CREATE TABLE IF NOT EXISTS media_files (
                 file_hash TEXT PRIMARY KEY,
@@ -43,8 +41,6 @@ class PhotoSynthDB:
             )
         ''')
 
-        # 2. People / Clusters (Who is this?)
-        # cluster_id 0 might be 'Aditya', 1 might be 'Ankita'
         c.execute('''
             CREATE TABLE IF NOT EXISTS people (
                 cluster_id INTEGER PRIMARY KEY,
@@ -52,8 +48,6 @@ class PhotoSynthDB:
             )
         ''')
 
-        # 3. Faces (The Raw Data)
-        # Stores the 512-dim vector for every face found in every file
         c.execute('''
             CREATE TABLE IF NOT EXISTS faces (
                 face_id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,15 +57,12 @@ class PhotoSynthDB:
                 FOREIGN KEY(file_hash) REFERENCES media_files(file_hash)
             )
         ''')
-        
         conn.commit()
         conn.close()
 
     def get_connection(self):
-        # detect_types is needed to trigger the numpy converter
         return sqlite3.connect(self.db_path, detect_types=sqlite3.PARSE_DECLTYPES)
 
-    # --- File Operations ---
     def register_file(self, file_hash, file_path):
         conn = self.get_connection()
         try:
@@ -81,10 +72,8 @@ class PhotoSynthDB:
                 ON CONFLICT(file_hash) DO UPDATE SET file_path=excluded.file_path
             ''', (file_hash, file_path, time.time()))
             conn.commit()
-        except Exception as e:
-            print(f"DB Error: {e}")
-        finally:
-            conn.close()
+        except: pass
+        finally: conn.close()
 
     def update_status(self, file_hash, status, narrative=None, concepts=None):
         conn = self.get_connection()
@@ -100,65 +89,45 @@ class PhotoSynthDB:
             params.append(json.dumps(concepts))
             
         params.append(file_hash)
-        sql = f"UPDATE media_files SET {', '.join(updates)} WHERE file_hash=?"
-        
-        conn.execute(sql, params)
+        # Safe update only if row exists
+        conn.execute(f"UPDATE media_files SET {', '.join(updates)} WHERE file_hash=?", params)
         conn.commit()
         conn.close()
 
     def check_status(self, file_hash):
         conn = self.get_connection()
-        c = conn.execute("SELECT status FROM media_files WHERE file_hash=?", (file_hash,))
-        row = c.fetchone()
+        row = conn.execute("SELECT status FROM media_files WHERE file_hash=?", (file_hash,)).fetchone()
         conn.close()
         return row[0] if row else None
 
-    # --- Face Operations ---
     def add_face(self, file_hash, embedding):
-        """Saves a raw face embedding."""
         conn = self.get_connection()
         conn.execute('INSERT INTO faces (file_hash, embedding) VALUES (?, ?)', (file_hash, embedding))
         conn.commit()
         conn.close()
 
     def get_all_embeddings(self):
-        """Used by the Clustering Script."""
         conn = self.get_connection()
-        cursor = conn.execute('SELECT face_id, embedding FROM faces')
-        data = cursor.fetchall()
+        data = conn.execute('SELECT face_id, embedding FROM faces').fetchall()
         conn.close()
         return data
 
     def update_clusters(self, cluster_map):
-        """
-        Updates faces with their calculated Cluster ID.
-        cluster_map: list of (cluster_id, face_id)
-        """
         conn = self.get_connection()
-        # Bulk update faces
         conn.executemany('UPDATE faces SET cluster_id = ? WHERE face_id = ?', cluster_map)
-        
-        # Register new people in the 'people' table
-        unique_clusters = set(c_id for c_id, _ in cluster_map if c_id != -1)
-        for c_id in unique_clusters:
+        unique = set(c for c, f in cluster_map if c != -1)
+        for c_id in unique:
             conn.execute('INSERT OR IGNORE INTO people (cluster_id) VALUES (?)', (c_id,))
-            
         conn.commit()
         conn.close()
 
     def get_known_faces(self):
-        """
-        Used by the Detector.
-        Returns [(cluster_id, name, embedding), ...] for all identified people.
-        """
         conn = self.get_connection()
-        # We join faces and people to get names
-        query = '''
+        rows = conn.execute('''
             SELECT f.cluster_id, p.name, f.embedding 
             FROM faces f
             JOIN people p ON f.cluster_id = p.cluster_id
             WHERE f.cluster_id != -1
-        '''
-        rows = conn.execute(query).fetchall()
+        ''').fetchall()
         conn.close()
         return rows
