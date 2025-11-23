@@ -4,7 +4,14 @@ import torch
 from PIL import Image
 from insightface.app import FaceAnalysis
 from transformers import AutoProcessor, AutoModelForCausalLM 
+import sys
+from unittest.mock import MagicMock
 
+# 🛡️ SAFETY: Mock flash_attn so Florence-2 loads on Fedora/Ubuntu without compiling
+# This forces it to fall back to PyTorch's native SDPA (which is fast anyway)
+if "flash_attn" not in sys.modules:
+    sys.modules["flash_attn"] = MagicMock()
+    
 class Detector:
     def __init__(self):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
