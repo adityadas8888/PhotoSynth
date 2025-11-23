@@ -5,7 +5,7 @@ import numpy as np
 import io
 
 # --- 1. SHARED NAS PATH ---
-DB_PATH = os.path.expanduser("~/personal/nas/photosynth.db")
+DB_PATH = os.path.expanduser("~/personal/nas/homes/photosynth.db")
 
 # --- Numpy Adapters ---
 def adapt_array(arr):
