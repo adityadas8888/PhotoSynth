@@ -71,15 +71,45 @@ class Captioner:
             self.processor = AutoProcessor.from_pretrained(model_path)
 
     def _load_image_or_video(self, file_path):
+        """Extracts a frame from video or loads image (With Path Auto-Correction)."""
+        
+        # --- 1. AUTO-CORRECT PATH ---
+        if not os.path.exists(file_path):
+            # Path from 3090 likely looks like: /home/aditya/personal/nas/...
+            # Path on 5090 is: /home/adityadas/personal/nas/...
+            
+            # Strategy: Find the part after "nas" and append it to OUR nas path.
+            if "personal/nas" in file_path:
+                relative_part = file_path.split("personal/nas")[-1]
+                # Construct local path based on CURRENT user
+                current_home = os.path.expanduser("~")
+                corrected_path = os.path.join(current_home, "personal/nas", relative_part.strip("/"))
+                
+                if os.path.exists(corrected_path):
+                    print(f"🔄 Path Remapped: {file_path} -> {corrected_path}")
+                    file_path = corrected_path
+                else:
+                    print(f"❌ Path correction failed. Local path does not exist: {corrected_path}")
+                    return Image.new('RGB', (224, 224), 'black') # Fail gracefully
+
+        # --- 2. Load Content (Video or Image) ---
         ext = os.path.splitext(file_path)[1].lower()
+        
         if ext in ['.mp4', '.mov', '.avi', '.mkv', '.m4v']:
             cap = cv2.VideoCapture(file_path)
-            if not cap.isOpened(): return Image.new('RGB', (224, 224), 'black')
-            total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-            cap.set(cv2.CAP_PROP_POS_FRAMES, total // 2)
+            if not cap.isOpened(): 
+                print(f"⚠️ Error opening video: {file_path}")
+                return Image.new('RGB', (224, 224), 'black')
+
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            cap.set(cv2.CAP_PROP_POS_FRAMES, total_frames // 2)
             ret, frame = cap.read()
             cap.release()
-            return Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)) if ret else Image.new('RGB', (224, 224), 'black')
+            
+            if ret:
+                return Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+            else:
+                return Image.new('RGB', (224, 224), 'black')
         else:
             return Image.open(file_path)
 
