@@ -3,6 +3,7 @@ import os
 import cv2
 from photosynth.db import PhotoSynthDB
 from photosynth.pipeline.detector import Detector
+from photosynth.utils.paths import heal_path
 from tqdm import tqdm
 
 # Define output directory relative to project root
@@ -42,7 +43,7 @@ def main():
         
         for f_row in files:
             # 1. Path Healing
-            path = detector._heal_path(f_row[0])
+            path = heal_path(f_row[0])
             if not os.path.exists(path): continue
             
             try:

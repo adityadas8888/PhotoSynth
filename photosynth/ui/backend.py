@@ -20,7 +20,8 @@ app.add_middleware(
 
 # Paths
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-DB_PATH = os.path.join(BASE_DIR, "photosynth.db")
+from photosynth.db import DB_PATH
+# DB_PATH is now imported from photosynth.db
 FACES_DIR = os.path.join(BASE_DIR, "faces_crop")
 UI_DIR = os.path.dirname(__file__)
 
