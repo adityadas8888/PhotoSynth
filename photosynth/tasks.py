@@ -6,6 +6,7 @@ from .pipeline.captioner import Captioner
 from .metadata import MetadataWriter
 from .db import PhotoSynthDB
 from .utils.hashing import calculate_content_hash # <--- NEW IMPORT
+from .utils.paths import heal_path
 
 # Singletons
 detector_instance = None
@@ -83,6 +84,11 @@ def run_vlm_captioning(job_data):
     captioner = get_captioner()
     analysis = captioner.generate_analysis(file_path, det_results)
     
+    # Keyword Validation
+    if not analysis['concepts']:
+        print(f"⚠️ WARNING: No keywords generated for {os.path.basename(file_path)}. Adding fallback.")
+        analysis['concepts'] = ["needs_review"]
+    
     writer = get_writer()
     success = writer.write_metadata(file_path, analysis['narrative'], analysis['concepts'])
 
@@ -101,7 +107,7 @@ def extract_faces_task(file_path):
     
     if faces:
         # Use path healing for hash calc to ensure consistency
-        safe_path = detector._heal_path(file_path)
+        safe_path = heal_path(file_path)
         file_hash = calculate_content_hash(safe_path)
         
         save_faces_task.apply_async(args=[file_hash, file_path, faces], queue='db_queue')

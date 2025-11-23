@@ -6,6 +6,7 @@ import numpy as np
 from PIL import Image
 from insightface.app import FaceAnalysis
 from ultralytics import YOLOWorld
+from photosynth.utils.paths import heal_path
 
 class Detector:
     def __init__(self, enable_yolo=True):
@@ -36,13 +37,7 @@ class Detector:
                     vocab = json.load(f)
                 self.yolo_model.set_classes(vocab)
 
-    def _heal_path(self, file_path):
-        if os.path.exists(file_path): return file_path
-        if "personal/nas" in file_path:
-            relative = file_path.split("personal/nas")[-1]
-            new_path = os.path.join(os.path.expanduser("~"), "personal/nas", relative.strip("/"))
-            if os.path.exists(new_path): return new_path
-        return file_path
+
 
     def _identify_faces(self, faces):
         """Returns list of names ['Aditya', 'Ankita'] found in the image."""
@@ -84,7 +79,7 @@ class Detector:
             return {"status": "SKIPPED", "reason": "Unsupported format"}
 
     def _process_image(self, image_path):
-        image_path = self._heal_path(image_path)
+        image_path = heal_path(image_path)
         image_cv = cv2.imread(image_path)
         if image_cv is None: return {}
         
@@ -112,7 +107,7 @@ class Detector:
 
     def _process_video(self, video_path):
         print(f"🎬 Video detected. Sampling...")
-        video_path = self._heal_path(video_path)
+        video_path = heal_path(video_path)
         cap = cv2.VideoCapture(video_path)
         
         if not cap.isOpened(): return {"status": "ERROR"}

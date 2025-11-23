@@ -13,7 +13,15 @@ with open(SETTINGS_PATH, 'r') as f:
     config = yaml.safe_load(f)
 
 # Broker and backend point to the Redis instance defined in settings
-REDIS_BROKER_URL = config['network']['redis_url']
+import socket
+
+hostname = socket.gethostname()
+if "5090" in hostname:
+    # Node B (Worker) connects to Node A
+    REDIS_BROKER_URL = "redis://10.0.0.230:6379/0"
+else:
+    # Node A (Host) connects to itself
+    REDIS_BROKER_URL = "redis://127.0.0.1:6379/0"
 
 app = Celery(
     'PhotoSynth',
