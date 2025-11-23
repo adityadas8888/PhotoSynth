@@ -8,8 +8,24 @@ class MetadataWriter:
         except:
             raise RuntimeError("ExifTool is not installed.")
 
+    def _heal_path(self, file_path):
+        """Fixes path mismatch between 3090 (aditya) and 5090 (adityadas)."""
+        if os.path.exists(file_path):
+            return file_path
+            
+        # If path is missing, try to re-map it to current user
+        if "personal/nas" in file_path:
+            relative_part = file_path.split("personal/nas")[-1]
+            current_home = os.path.expanduser("~")
+            corrected_path = os.path.join(current_home, "personal/nas", relative_part.strip("/"))
+            
+            if os.path.exists(corrected_path):
+                print(f"🔧 Metadata Writer healed path: {corrected_path}")
+                return corrected_path
+                
+        return file_path
+
     def _get_real_file_type(self, file_path):
-        """Asks ExifTool what the file actually is, ignoring the extension."""
         try:
             return subprocess.check_output(
                 ['exiftool', '-FileType', '-s', '-S', file_path]
@@ -18,42 +34,39 @@ class MetadataWriter:
             return "unknown"
 
     def write_metadata(self, file_path, full_narrative, search_concepts):
-        # 1. Prepare Strings
-        # Synology limits description display to ~200 chars, so we front-load it.
+        # 1. HEAL THE PATH FIRST
+        file_path = self._heal_path(file_path)
+        
+        if not os.path.exists(file_path):
+            print(f"❌ Error: Metadata Writer cannot find file: {file_path}")
+            return False
+
+        # 2. Prepare Strings
         top_concepts = search_concepts[:10]
         front_loaded_string = ", ".join(top_concepts)
         search_optimized_description = f"{front_loaded_string}. {full_narrative}"
         
-        # 2. Check Actual Content Type
+        # 3. Check Type
         real_type = self._get_real_file_type(file_path)
         
-        # 3. Base Command
+        # 4. Base Command
         cmd = ['exiftool', '-overwrite_original', '-P', '-m']
         
-        # --- STRATEGY: HIT EVERY STANDARD FIELD ---
-        
-        # A. General Description (All formats)
-        # Synology reads 'ImageDescription' (Exif) and 'Description' (XMP)
+        # --- TAGGING STRATEGY ---
+        # A. General Description
         cmd.extend([
             f'-ImageDescription={search_optimized_description}',
             f'-XMP-dc:Description={search_optimized_description}',
         ])
 
-        # B. General Tags (The Critical Part)
-        # Synology reads 'Subject' (XMP) and 'Keywords' (IPTC)
-        # We clear them first to avoid duplicates, then add new ones.
+        # B. General Tags
         cmd.extend(['-XMP-dc:Subject=', '-IPTC:Keywords='])
-        
         for concept in search_concepts:
-            # Standard XMP Tags (Works for JPG/PNG/TIFF in Synology)
             cmd.append(f'-XMP-dc:Subject+={concept}')
-            
-            # Legacy IPTC Tags (Only valid for JPG, often ignored by Synology but good backup)
             if real_type in ['jpeg', 'jpg']:
                 cmd.append(f'-IPTC:Keywords+={concept}')
 
-        # C. Video Specifics (Future Proofing)
-        # Synology ignores these TODAY, but this is the standard way to tag videos.
+        # C. Video Specifics
         if real_type in ['mp4', 'mov', 'm4v', 'mkv']:
             cmd.extend(['-QuickTime:Keywords=', '-QuickTime:Description='])
             cmd.append(f'-QuickTime:Description={search_optimized_description}')
@@ -62,7 +75,7 @@ class MetadataWriter:
 
         cmd.append(file_path)
 
-        # 4. Execute
+        # 5. Execute
         try:
             subprocess.run(cmd, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
             print(f"✅ Metadata written to {os.path.basename(file_path)} ({real_type.upper()})")
