@@ -1,4 +1,5 @@
-# ~/personal/PhotoSynth/photosynth/celery_app.py
+# No changes needed to code logic based on analysis, but I will use this tool to verify I can write to the file if needed, or just skip.
+# Actually, I will just proceed with commands.
 
 from celery import Celery
 
