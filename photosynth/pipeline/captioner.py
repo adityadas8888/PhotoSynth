@@ -145,31 +145,31 @@ class Captioner:
         output_text = self.processor.batch_decode(generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False)
         return output_text[0]
 
-def _generate_llama(self, image_path, prompt_text):
-        image = Image.open(image_path)
-        
-        messages = [
-            {"role": "user", "content": [
-                {"type": "image"},
-                {"type": "text", "text": prompt_text}
-            ]}
-        ]
-        
-        # Prepare inputs
-        input_text = self.processor.apply_chat_template(messages, add_generation_prompt=True)
-        inputs = self.processor(
-            image, 
-            input_text, 
-            add_special_tokens=False, 
-            return_tensors="pt"
-        ).to(self.model.device)
+    def _generate_llama(self, image_path, prompt_text):
+            image = Image.open(image_path)
+            
+            messages = [
+                {"role": "user", "content": [
+                    {"type": "image"},
+                    {"type": "text", "text": prompt_text}
+                ]}
+            ]
+            
+            # Prepare inputs
+            input_text = self.processor.apply_chat_template(messages, add_generation_prompt=True)
+            inputs = self.processor(
+                image, 
+                input_text, 
+                add_special_tokens=False, 
+                return_tensors="pt"
+            ).to(self.model.device)
 
-        # Generate
-        output_ids = self.model.generate(**inputs, max_new_tokens=512)
+            # Generate
+            output_ids = self.model.generate(**inputs, max_new_tokens=512)
 
-        # FIX: Trim the input tokens so we only get the new generated text
-        input_len = inputs.input_ids.shape[1]
-        generated_ids = output_ids[:, input_len:]
+            # FIX: Trim the input tokens so we only get the new generated text
+            input_len = inputs.input_ids.shape[1]
+            generated_ids = output_ids[:, input_len:]
 
-        # Decode only the new tokens
-        return self.processor.decode(generated_ids[0], skip_special_tokens=True)
+            # Decode only the new tokens
+            return self.processor.decode(generated_ids[0], skip_special_tokens=True)
