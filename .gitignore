@@ -30,6 +30,7 @@ config/secrets.yaml
 *.sqlite3
 data/
 outputs/
+photosynth.db
 
 # --- IDEs & OS ---
 .idea/
