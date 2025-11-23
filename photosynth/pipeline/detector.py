@@ -11,7 +11,7 @@ from unittest.mock import MagicMock
 # This forces it to fall back to PyTorch's native SDPA (which is fast anyway)
 if "flash_attn" not in sys.modules:
     sys.modules["flash_attn"] = MagicMock()
-    
+
 class Detector:
     def __init__(self):
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
@@ -74,49 +74,49 @@ class Detector:
             "is_video": False
         }
 
-def _process_video(self, video_path):
-        print(f"🎬 Video detected. Calculating sampling interval...")
-        cap = cv2.VideoCapture(video_path)
-        
-        raw_fps = cap.get(cv2.CAP_PROP_FPS)
-        # FIX: Force a safe FPS if the file reports 0
-        fps = raw_fps if raw_fps > 0 else 30.0
-        
-        total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
-        duration = total_frames / fps
-        
-        # 5-2-1 Logic
-        if duration > 30: interval_sec = 5
-        elif duration > 5: interval_sec = 2
-        else: interval_sec = 1
+    def _process_video(self, video_path):
+            print(f"🎬 Video detected. Calculating sampling interval...")
+            cap = cv2.VideoCapture(video_path)
             
-        frame_interval = int(fps * interval_sec)
-        # Safety: Ensure we never have an interval of 0
-        if frame_interval < 1: frame_interval = 1 
-        
-        print(f"   Duration: {duration:.1f}s -> Sampling every {interval_sec}s")
-        
-        all_objects = set()
-        frame_idx = 0
-        
-        while cap.isOpened():
-            ret, frame = cap.read()
-            if not ret: break
+            raw_fps = cap.get(cv2.CAP_PROP_FPS)
+            # FIX: Force a safe FPS if the file reports 0
+            fps = raw_fps if raw_fps > 0 else 30.0
             
-            if frame_idx % frame_interval == 0:
-                image_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
-                objs = self._run_florence_on_frame(image_pil)
-                all_objects.update(objs)
+            total_frames = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+            duration = total_frames / fps
             
-            frame_idx += 1
+            # 5-2-1 Logic
+            if duration > 30: interval_sec = 5
+            elif duration > 5: interval_sec = 2
+            else: interval_sec = 1
+                
+            frame_interval = int(fps * interval_sec)
+            # Safety: Ensure we never have an interval of 0
+            if frame_interval < 1: frame_interval = 1 
             
-        cap.release()
-        return {
-            "status": "SUCCESS",
-            "faces": [], 
-            "objects": list(all_objects),
-            "is_video": True
-        }
+            print(f"   Duration: {duration:.1f}s -> Sampling every {interval_sec}s")
+            
+            all_objects = set()
+            frame_idx = 0
+            
+            while cap.isOpened():
+                ret, frame = cap.read()
+                if not ret: break
+                
+                if frame_idx % frame_interval == 0:
+                    image_pil = Image.fromarray(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB))
+                    objs = self._run_florence_on_frame(image_pil)
+                    all_objects.update(objs)
+                
+                frame_idx += 1
+                
+            cap.release()
+            return {
+                "status": "SUCCESS",
+                "faces": [], 
+                "objects": list(all_objects),
+                "is_video": True
+            }
 
     def _run_florence_on_frame(self, image_pil):
         task_prompt = "<OD>"
