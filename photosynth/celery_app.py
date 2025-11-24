@@ -2,7 +2,7 @@
 # Actually, I will just proceed with commands.
 
 from celery import Celery
-
+import socket
 # Broker and backend point to the Redis instance running on 10.0.0.230
 # If your 3090 PC IP changes, you MUST update this line!
 import yaml
@@ -14,7 +14,7 @@ with open(SETTINGS_PATH, 'r') as f:
     config = yaml.safe_load(f)
 
 # Broker and backend point to the Redis instance defined in settings
-import socket
+
 
 hostname = socket.gethostname()
 if "5090" in hostname:
@@ -38,9 +38,13 @@ app.conf.update(
     enable_utc=True,
     # 🚨 Optional: Define specific queues for explicit routing
     task_routes = {
+# --- NEW ENTRIES FOR FACE HARVEST SPEEDUP ---
+        # Route the heavy work to the dedicated GPU queue for the 5090
+        'photosynth.tasks.extract_faces_task': {'queue': 'face_queue'},
+        # Keep the DB writing task in the existing queue for simplicity
+        'photosynth.tasks.save_faces_task': {'queue': 'detection_queue'},
         'photosynth.tasks.run_detection_pass': {'queue': 'detection_queue'},
         'photosynth.tasks.run_vlm_captioning': {'queue': 'vlm_queue'},
         'photosynth.tasks.finalize_file': {'queue': 'detection_queue'},
-        'photosynth.tasks.save_faces_task': {'queue': 'detection_queue'},
     }
 )
