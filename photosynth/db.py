@@ -72,13 +72,17 @@ class PhotoSynthDB:
         return sqlite3.connect(self.db_path, timeout=30.0, detect_types=sqlite3.PARSE_DECLTYPES)
 
     def register_file(self, file_hash, file_path):
+        from photosynth.utils.paths import make_relative
+        # Store relative path to be machine-agnostic
+        rel_path = make_relative(file_path)
+        
         conn = self.get_connection()
         try:
             conn.execute('''
                 INSERT INTO media_files (file_hash, file_path, status, last_updated)
                 VALUES (?, ?, 'PENDING', ?)
                 ON CONFLICT(file_hash) DO UPDATE SET file_path=excluded.file_path
-            ''', (file_hash, file_path, time.time()))
+            ''', (file_hash, rel_path, time.time()))
             conn.commit()
         except: pass
         finally: conn.close()

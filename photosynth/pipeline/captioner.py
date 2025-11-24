@@ -100,7 +100,7 @@ class Captioner:
             "Constraints:\n"
             "1. 'caption': A single, concise sentence (MAX 200 CHARACTERS). Be descriptive but brief.\n"
             "2. 'keywords': A list of relevant tags/keywords.\n"
-            "3. If names are provided in Context, USE THEM in the caption.\n"
+            "3. If names are provided in Context, **USE THEM** in the caption.\n"
             "4. Output MUST be valid JSON only. No markdown, no explanations.\n\n"
             "JSON Schema:\n"
             '{"caption": "string", "keywords": ["string", "string"]}'

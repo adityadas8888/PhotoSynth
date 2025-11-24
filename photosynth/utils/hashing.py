@@ -3,6 +3,8 @@ import imagehash
 import os
 from PIL import Image
 
+from photosynth.utils.paths import heal_path
+
 def calculate_content_hash(file_path):
     """
     Generates a 'Perceptual Hash' (pHash) of the visual content.
@@ -11,6 +13,7 @@ def calculate_content_hash(file_path):
     - Works on Images and Videos (by hashing the middle frame).
     """
     try:
+        file_path = heal_path(file_path)
         # Check file size first
         if os.path.getsize(file_path) == 0: return None
 

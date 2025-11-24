@@ -1,5 +1,6 @@
 from .celery_app import app
 import os
+import torch
 import numpy as np
 from .pipeline.detector import Detector
 from .pipeline.captioner import Captioner
@@ -68,6 +69,8 @@ def run_detection_pass(file_path):
 
 @app.task(name='photosynth.tasks.run_vlm_captioning')
 def run_vlm_captioning(job_data):
+    global detector_instance
+    
     if isinstance(job_data, str):
         file_path = job_data
         file_hash = calculate_content_hash(file_path)
@@ -78,6 +81,19 @@ def run_vlm_captioning(job_data):
         det_results = job_data.get('det_results', {})
 
     print(f"🤖 VLM CAPTION: {os.path.basename(file_path)}")
+    
+    # Heal path for 5090 context
+    file_path = heal_path(file_path)
+    
+    # CRITICAL: Free VRAM by unloading detector before loading VLM
+    if detector_instance is not None:
+        print("🧹 Unloading Detector to free VRAM...")
+        del detector_instance
+        detector_instance = None
+        import gc
+        gc.collect()
+        torch.cuda.empty_cache()
+    
     db = get_db()
     db.update_status(file_hash, 'PROCESSING_VLM')
 

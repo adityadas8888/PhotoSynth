@@ -67,7 +67,21 @@ class MetadataWriter:
         except subprocess.CalledProcessError as e:
             err = e.stderr.decode().strip()
             if "Not a valid" in err and "looks more like a" in err:
-                print(f"⚠️ SKIPPING {os.path.basename(file_path)}: Extension mismatch.")
+                # Extension mismatch detected - force write based on actual file type
+                print(f"⚠️ Extension mismatch for {os.path.basename(file_path)}. Forcing write as {real_type.upper()}...")
+                
+                # Retry with -ext flag to force ExifTool to treat it as the real type
+                cmd_forced = cmd.copy()
+                cmd_forced.insert(1, f'-ext')
+                cmd_forced.insert(2, real_type)
+                
+                try:
+                    subprocess.run(cmd_forced, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                    print(f"✅ Metadata written (forced as {real_type.upper()})")
+                    return True
+                except subprocess.CalledProcessError as retry_err:
+                    print(f"❌ Force-write also failed: {retry_err.stderr.decode().strip()}")
+                    return False
             else:
                 print(f"❌ Metadata Write Failed: {err}")
-            return False
+                return False
