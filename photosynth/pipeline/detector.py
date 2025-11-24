@@ -86,7 +86,7 @@ class Detector:
         # 1. Faces
         faces = self.face_app.get(image_cv)
         known_people = self._identify_faces(faces)
-        self._save_face_crops(faces, image_cv, image_path)
+        # self._save_face_crops(faces, image_cv, image_path)
         
         # 2. Objects
         objs = []
