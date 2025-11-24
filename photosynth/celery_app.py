@@ -40,5 +40,7 @@ app.conf.update(
     task_routes = {
         'photosynth.tasks.run_detection_pass': {'queue': 'detection_queue'},
         'photosynth.tasks.run_vlm_captioning': {'queue': 'vlm_queue'},
+        'photosynth.tasks.finalize_file': {'queue': 'detection_queue'},
+        'photosynth.tasks.save_faces_task': {'queue': 'detection_queue'},
     }
 )
