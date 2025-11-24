@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "PhotoSynth"
-version = "0.1.0"
+version = "0.5.0"
 description = "Distributed pipeline for NAS photo tagging using YOLO-World, InsightFace, and Llama 3.2 Vision."
 readme = "README.md"
 authors = [
@@ -43,11 +43,13 @@ dependencies = [
     # --- Face Analysis & Clustering ---
     "insightface>=0.7.3",
     "onnxruntime-gpu>=1.19.0 ; sys_platform == 'linux'",
-    "scikit-learn>=1.3.0", # <--- NEW: Required for Clustering (DBSCAN)
+    "scikit-learn>=1.3.0", # Required for Clustering (DBSCAN)
+    # --- Database/Progress Monitoring ---
+    "psycopg2-binary>=2.9.11", # For high-performance PostgreSQL access
+    "flower>=2.0.0",           # For Celery Web Dashboard/Progress Monitoring
     # --- Utilities ---
     "qwen-vl-utils>=0.0.4",
     "rich>=14.2.0",
-    "psycopg2-binary>=2.9.11",
 ]
 
 [tool.setuptools]

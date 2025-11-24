@@ -37,14 +37,16 @@ app.conf.update(
     timezone='America/Los_Angeles', # Using a standard US timezone
     enable_utc=True,
     # 🚨 Optional: Define specific queues for explicit routing
-    task_routes = {
-# --- NEW ENTRIES FOR FACE HARVEST SPEEDUP ---
-        # Route the heavy work to the dedicated GPU queue for the 5090
-        'photosynth.tasks.extract_faces_task': {'queue': 'face_queue'},
-        # Keep the DB writing task in the existing queue for simplicity
-        'photosynth.tasks.save_faces_task': {'queue': 'detection_queue'},
+    task_routes={
         'photosynth.tasks.run_detection_pass': {'queue': 'detection_queue'},
         'photosynth.tasks.run_vlm_captioning': {'queue': 'vlm_queue'},
         'photosynth.tasks.finalize_file': {'queue': 'detection_queue'},
+
+        # --- NEW ENTRIES FOR FACE HARVEST SPEEDUP ---
+        # Route heavy GPU work to the dedicated face_queue (5090 worker)
+        'photosynth.tasks.extract_faces_task': {'queue': 'face_queue'},
+        # Keep the DB writing task in the existing queue
+        'photosynth.tasks.save_faces_task': {'queue': 'detection_queue'},
+        # ---------------------------------------------
     }
 )

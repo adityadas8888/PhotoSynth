@@ -5,6 +5,8 @@ import os
 import numpy as np
 import io
 import json
+import psycopg2
+import psycopg2.extras
 
 # --- CONFIGURATION ---
 DB_HOST = "10.0.0.230"
@@ -73,7 +75,7 @@ class PhotoSynthDB:
     def register_file(self, file_hash, file_path):
         from photosynth.utils.paths import make_relative
         rel_path = make_relative(file_path)
-        
+
         conn = self.get_connection()
         try:
             with conn.cursor() as c:
@@ -120,7 +122,6 @@ class PhotoSynthDB:
             print(f"DB Batch Error: {e}")
         finally:
             conn.close()
-
 
     def update_status(self, file_hash, status, narrative=None, concepts=None):
         conn = self.get_connection()

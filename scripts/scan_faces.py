@@ -2,11 +2,12 @@
 import os
 import sys
 import time
-from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 from rich.live import Live
+from concurrent.futures import ThreadPoolExecutor, as_completed  # <--- NEW IMPORTS
+from celery.result import AsyncResult  # <--- NEW IMPORT for monitoring
 from photosynth.db import PhotoSynthDB
 from photosynth.tasks import extract_faces_task
 from photosynth.utils.hashing import calculate_content_hash
@@ -14,17 +15,20 @@ from photosynth.utils.hashing import calculate_content_hash
 # Config
 NAS_PATH = os.path.expanduser("~/personal/nas/homes/aditya")
 EXTENSIONS = ['.jpg', '.jpeg', '.png', '.arw', '.heic']
-HASH_WORKERS = 16
+HASH_WORKERS = 16  # Configured to maximize I/O and CPU utilization for hashing
+
 console = Console()
+
 
 def generate_table(tasks):
     table = Table(title="Face Scanning Progress")
     table.add_column("File", style="cyan")
     table.add_column("Hash", style="blue")
-    table.add_column("Status", style="magenta")
-    
+    table.add_column("DB Faces", style="magenta")
+    table.add_column("Celery Status", style="yellow")  # <--- NEW COLUMN
+
     db = PhotoSynthDB()
-    
+
     for t in tasks:
         # Check if faces exist for this hash
         conn = db.get_connection()
@@ -32,10 +36,25 @@ def generate_table(tasks):
             c.execute("SELECT COUNT(*) FROM faces WHERE file_hash=%s", (t['hash'],))
             face_count = c.fetchone()[0]
         conn.close()
-        
-        status = f"✅ {face_count} faces" if face_count > 0 else "⏳ Pending"
-        table.add_row(t['name'], t['hash'][:16], status)
-    
+
+        db_status = f"✅ {face_count} faces" if face_count > 0 else "⏳ Pending DB"
+
+        # Celery Status Check
+        celery_status = "N/A"
+        if t.get('task_id'):
+            result = AsyncResult(t['task_id'])
+            celery_status = str(result.status)
+            if result.status == 'SUCCESS':
+                celery_status = f"[green]{result.status}[/green]"
+            elif result.status == 'STARTED':
+                celery_status = f"[yellow]{result.status}[/yellow]"
+            elif result.status in ('PENDING', 'RECEIVED'):
+                celery_status = f"[cyan]{result.status}[/cyan]"
+            elif result.status in ('FAILURE', 'REVOKED'):
+                celery_status = f"[red]{result.status}[/red]"
+
+        table.add_row(t['name'], t['hash'][:16], db_status, celery_status)  # <--- UPDATED ROW
+
     return table
 
 
@@ -43,7 +62,7 @@ def main():
     console.print("[bold blue]🚀 Starting Distributed Face Harvest...[/bold blue]")
     db = PhotoSynthDB()
 
-    # 1. Load Cache
+    # 1. Load Cache (Unchanged)
     console.print("   Loading DB index...")
     conn = db.get_connection()
 
@@ -57,7 +76,7 @@ def main():
     conn.close()
     console.print(f"   Loaded {len(known_paths)} paths and {len(known_hashes)} hashes.")
 
-    # 2. Find Files
+    # 2. Find Files (Unchanged)
     console.print("   Listing files on NAS...")
     files = []
     for ext in EXTENSIONS:
@@ -66,14 +85,14 @@ def main():
 
     console.print(f"[bold blue]📂 Found {len(files)} files. Starting parallel hash calculation...[/bold blue]")
 
-    tasks = []
+    tasks_for_monitor = []  # List to hold tasks for the rich monitor table
+    files_to_register = []  # List for batch DB update: (hash, path)
+    files_to_queue = []  # List of (hash, path) to send to Celery
+
     path_skipped = 0
     hash_skipped = 0
 
-    # --- START OF PARALLEL HASHING AND BATCH QUEUEING LOGIC ---
-    files_to_register = []
-    files_to_process = []
-
+    # --- START OF PARALLEL HASHING AND FILTERING ---
     with ThreadPoolExecutor(max_workers=HASH_WORKERS) as executor:
         # Submit all hash calculations to the thread pool
         future_to_path = {
@@ -81,14 +100,12 @@ def main():
             for p in files if "@eaDir" not in str(p)
         }
 
-        # Process results as they complete (faster than waiting for all)
         for future in as_completed(future_to_path):
             path_str = future_to_path[future]
 
             try:
                 f_hash = future.result()
             except Exception as exc:
-                # Handle potential hashing failures (e.g., corrupted files)
                 console.print(f"[red]⚠️ Hashing failed for {path_str}: {exc}[/red]")
                 f_hash = None
 
@@ -99,54 +116,54 @@ def main():
                 path_skipped += 1
                 continue
 
-            # Hash check: if hash is known, we register it (to update the path)
-            # but skip the processing task, then move on.
+            # Hash check: if hash is known, register the file (to update path) but skip the task
             if f_hash in known_hashes:
                 files_to_register.append((f_hash, path_str))
                 hash_skipped += 1
                 continue
 
-            # Queue task for processing and register file
+            # New file/hash: Register and Queue
             files_to_register.append((f_hash, path_str))
-            files_to_process.append(path_str)  # Path for Celery delay
+            files_to_queue.append((f_hash, path_str))
 
-            # Prepare task entry for the monitoring table
-            tasks.append({
-                "name": Path(path_str).name,
-                "path": path_str,
-                "hash": f_hash
-            })
-
-    # --- BATCH DATABASE REGISTRATION (Sequential but highly efficient) ---
+    # --- BATCH DATABASE REGISTRATION ---
     if files_to_register:
         console.print(f"💾 Batch registering/updating {len(files_to_register)} file paths...")
         db.batch_register_files(files_to_register)
 
-    # --- BATCH TASK QUEUEING (Still using Celery's .delay/.apply_async) ---
-    for path_str in files_to_process:
-        # Use apply_async to specify a dedicated queue for the 5090 worker
-        # Assuming you've configured a 'face_queue' (see section 2 of the previous answer)
-        extract_faces_task.apply_async(args=[path_str], queue='face_queue')
+    # --- TASK QUEUEING AND MONITOR SETUP ---
+    for f_hash, path_str in files_to_queue:
+        # Queue task with specific routing for the 5090 (face_queue)
+        task_result = extract_faces_task.apply_async(args=[path_str], queue='face_queue')
 
-    console.print(f"[bold green]✅ Queued {len(files_to_process)} files for processing[/bold green]")
+        # Prepare task entry for the monitoring table
+        tasks_for_monitor.append({
+            "name": Path(path_str).name,
+            "path": path_str,
+            "hash": f_hash,
+            "task_id": task_result.id  # <--- Store the Celery ID
+        })
+
+    console.print(f"[bold green]✅ Queued {len(files_to_queue)} files for processing[/bold green]")
     console.print(f"⏩ Skipped (Path): {path_skipped}, Skipped (Hash): {hash_skipped}")
 
-    if not tasks:
+    if not tasks_for_monitor:
         console.print("[yellow]No new files to process.[/yellow]")
         return
-    
+
     # 3. Monitor Progress
     console.print("\n[bold blue]📊 Monitoring progress (Ctrl+C to exit)...[/bold blue]\n")
-    
-    with Live(generate_table(tasks), refresh_per_second=2) as live:
+
+    with Live(generate_table(tasks_for_monitor), refresh_per_second=2) as live:  # Use the new list
         try:
             while True:
-                live.update(generate_table(tasks))
+                live.update(generate_table(tasks_for_monitor))
                 time.sleep(2)
         except KeyboardInterrupt:
             console.print("\n[yellow]Monitoring stopped. Tasks continue in background.[/yellow]")
-    
+
     console.print("\n[bold green]👉 Run: uv run python scripts/cluster_faces.py[/bold green]")
+
 
 if __name__ == "__main__":
     main()
