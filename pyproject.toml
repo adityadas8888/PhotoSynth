@@ -4,14 +4,15 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "PhotoSynth"
-version = "0.5.1"
+version = "0.5.2"
 description = "Distributed pipeline for NAS photo tagging using YOLO-World, InsightFace, and Llama 3.2 Vision."
 readme = "README.md"
 authors = [
     { name = "Aditya Das", email = "aditya.das8.ad@gmail.com" }
 ]
 license = "Apache-2.0"
-requires-python = ">=3.11, <3.12"
+# --- CRITICAL CHANGE: Allow Python 3.10 for FAISS compatibility ---
+requires-python = ">=3.10, <3.12"
 
 dependencies = [
     # --- Core Infrastructure ---
@@ -30,7 +31,6 @@ dependencies = [
     "opencv-python-headless>=4.10.0",
     "pyexiftool>=0.5.0",
     "imagehash>=4.3.1",
-    # --- NEW: HEIC Support ---
     "pillow-heif>=0.14.0",
     # --- Machine Learning Frameworks ---
     "torch>=2.5.0",
@@ -46,9 +46,11 @@ dependencies = [
     "insightface>=0.7.3",
     "onnxruntime-gpu>=1.19.0 ; sys_platform == 'linux'",
     "scikit-learn>=1.3.0",
+    # --- NEW: FAISS for GPU acceleration (The whole reason for this change) ---
+    "faiss-gpu>=1.7.0 ; sys_platform == 'linux'",
     # --- Database/Progress Monitoring ---
     "psycopg2-binary>=2.9.11",
-    "flower>=2.0.0",           # NEW: For Celery Web Dashboard
+    "flower>=2.0.0",
     # --- Utilities ---
     "qwen-vl-utils>=0.0.4",
     "rich>=14.2.0",
