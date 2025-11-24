@@ -24,3 +24,6 @@ def reset_db():
         print(f"❌ Reset failed: {e}")
     finally:
         conn.close()
+
+if __name__ == "__main__":
+    reset_db()
