@@ -1,9 +1,15 @@
 import cv2
 import imagehash
 import os
-from PIL import Image
+from PIL import Image, ImageFile
+import pillow_heif
 
 from photosynth.utils.paths import heal_path
+
+Image.register_mime('image/heif', pillow_heif.HeifImageFile)
+Image.register_decoder('heif', pillow_heif.HeifImageDecoder)
+ImageFile.LOAD_TRUNCATED_IMAGES = True
+Image.MAX_IMAGE_PIXELS = None
 
 def calculate_content_hash(file_path):
     """
