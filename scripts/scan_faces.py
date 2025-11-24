@@ -7,7 +7,7 @@ from rich.console import Console
 from rich.table import Table
 from rich.live import Live
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from celery.result import AsyncResult  # Added for monitoring
+from celery.result import AsyncResult
 from photosynth.db import PhotoSynthDB
 from photosynth.tasks import extract_faces_task
 from photosynth.utils.hashing import calculate_content_hash
@@ -15,7 +15,7 @@ from photosynth.utils.hashing import calculate_content_hash
 # Config
 NAS_PATH = os.path.expanduser("~/personal/nas/homes/aditya")
 EXTENSIONS = ['.jpg', '.jpeg', '.png', '.arw', '.heic']
-HASH_WORKERS = 16  # Configured for fast, parallel I/O and hashing
+HASH_WORKERS = 16
 
 console = Console()
 
@@ -76,23 +76,27 @@ def main():
     conn.close()
     console.print(f"   Loaded {len(known_paths)} paths and {len(known_hashes)} hashes.")
 
-    # 2. Find Files (Using the debug-friendly loop for better visibility)
-    console.print("   Listing files on NAS...")
+    # 2. Find Files (THE FIX: Using os.walk for robust traversal)
+    console.print("   Listing files on NAS via os.walk...")
     files = []
-    file_count = 0
-    start_time = time.time()
 
-    for ext in EXTENSIONS:
-        # Search for lowercase extensions
-        for p in Path(NAS_PATH).rglob(f"*{ext}"):
-            files.append(p)
-            file_count += 1
+    valid_extensions = set(e.lower() for e in EXTENSIONS)
 
-        # Search for uppercase extensions
-        ext_upper = ext.upper()
-        for p in Path(NAS_PATH).rglob(f"*{ext_upper}"):
-            files.append(p)
-            file_count += 1
+    for root, dirs, filenames in os.walk(NAS_PATH):
+        # Skip Synology's hidden metadata directories immediately
+        if "@eaDir" in root:
+            continue
+
+        # Optional: Modify dirs in-place to prune traversal (e.g., skip 'node_modules')
+        # if 'node_modules' in dirs: dirs.remove('node_modules')
+
+        for name in filenames:
+            file_path = Path(root) / name
+
+            # Manual extension check (faster than rglob for huge trees)
+            ext = file_path.suffix.lower()
+            if ext in valid_extensions:
+                files.append(file_path)
 
     console.print(f"[bold blue]📂 Found {len(files)} files. Starting parallel hash calculation...[/bold blue]")
 
@@ -105,10 +109,10 @@ def main():
 
     # --- PARALLEL HASHING AND FILTERING ---
     with ThreadPoolExecutor(max_workers=HASH_WORKERS) as executor:
-        # Submit all hash calculations to the thread pool, filtering out the @eaDir paths
+        # Submit all hash calculations to the thread pool
         future_to_path = {
             executor.submit(calculate_content_hash, str(p)): str(p)
-            for p in files if "@eaDir" not in str(p)
+            for p in files
         }
 
         for future in as_completed(future_to_path):
