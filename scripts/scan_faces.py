@@ -13,7 +13,7 @@ from photosynth.tasks import extract_faces_task
 from photosynth.utils.hashing import calculate_content_hash
 
 # Config
-NAS_PATH = os.path.expanduser("~/personal/nas/homes/aditya")
+NAS_PATH = os.path.expanduser("~/personal/nas/homes/")
 EXTENSIONS = ['.jpg', '.jpeg', '.png', '.arw', '.heic']
 HASH_WORKERS = 16
 

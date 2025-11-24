@@ -47,6 +47,7 @@ app.conf.update(
         'photosynth.tasks.extract_faces_task': {'queue': 'face_queue'},
         # Keep the DB writing task in the existing queue
         'photosynth.tasks.save_faces_task': {'queue': 'detection_queue'},
+        'photosynth.tasks.run_clustering_task': {'queue': 'face_queue'},
         # ---------------------------------------------
     }
 )
