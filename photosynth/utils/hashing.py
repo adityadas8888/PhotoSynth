@@ -2,15 +2,20 @@ import cv2
 import imagehash
 import os
 from PIL import Image, ImageFile
-import pillow_heif
 
-from photosynth.utils.paths import heal_path
+# --- CORRECTED HEIF REGISTRATION ---
+import pillow_heif # Ensure this is installed: uv pip install pillow-heif
 
-Image.register_mime('image/heif', pillow_heif.HeifImageFile)
-Image.register_decoder('heif', pillow_heif.HeifImageDecoder)
+# This single line handles the registration of the HEIF decoder and encoder
+# for both .heic and .heif files using the modern, simple API.
+pillow_heif.register_heif_opener()
+
+# Settings to prevent DecompressionBombWarning
 ImageFile.LOAD_TRUNCATED_IMAGES = True
 Image.MAX_IMAGE_PIXELS = None
+# -----------------------------------
 
+from photosynth.utils.paths import heal_path
 def calculate_content_hash(file_path):
     """
     Generates a 'Perceptual Hash' (pHash) of the visual content.
