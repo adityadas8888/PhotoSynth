@@ -88,6 +88,40 @@ class PhotoSynthDB:
         finally:
             conn.close()
 
+    def batch_register_files(self, files_list):
+        """
+        Efficiently registers or updates file paths for a list of (hash, path) tuples.
+        """
+        from photosynth.utils.paths import make_relative
+
+        # Format data for batch execution: (hash, rel_path, timestamp)
+        batch_data = [
+            (f_hash, make_relative(f_path), time.time())
+            for f_hash, f_path in files_list
+        ]
+
+        conn = self.get_connection()
+        try:
+            with conn.cursor() as c:
+                psycopg2.extras.execute_batch(
+                    cur=c,
+                    sql='''
+                        INSERT INTO media_files (file_hash, file_path, status, last_updated)
+                        VALUES (%s, %s, 'PENDING', %s)
+                        ON CONFLICT (file_hash) 
+                        DO UPDATE SET 
+                            file_path=EXCLUDED.file_path, 
+                            last_updated=EXCLUDED.last_updated
+                    ''',
+                    argslist=batch_data
+                )
+            conn.commit()
+        except Exception as e:
+            print(f"DB Batch Error: {e}")
+        finally:
+            conn.close()
+
+
     def update_status(self, file_hash, status, narrative=None, concepts=None):
         conn = self.get_connection()
         updates = ["status=%s", "last_updated=%s"]
