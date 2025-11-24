@@ -6,8 +6,8 @@ from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 from rich.live import Live
-from concurrent.futures import ThreadPoolExecutor, as_completed  # <--- NEW IMPORTS
-from celery.result import AsyncResult  # <--- NEW IMPORT for monitoring
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from celery.result import AsyncResult  # Added for monitoring
 from photosynth.db import PhotoSynthDB
 from photosynth.tasks import extract_faces_task
 from photosynth.utils.hashing import calculate_content_hash
@@ -15,7 +15,7 @@ from photosynth.utils.hashing import calculate_content_hash
 # Config
 NAS_PATH = os.path.expanduser("~/personal/nas/homes/aditya")
 EXTENSIONS = ['.jpg', '.jpeg', '.png', '.arw', '.heic']
-HASH_WORKERS = 16  # Configured to maximize I/O and CPU utilization for hashing
+HASH_WORKERS = 16  # Configured for fast, parallel I/O and hashing
 
 console = Console()
 
@@ -25,7 +25,7 @@ def generate_table(tasks):
     table.add_column("File", style="cyan")
     table.add_column("Hash", style="blue")
     table.add_column("DB Faces", style="magenta")
-    table.add_column("Celery Status", style="yellow")  # <--- NEW COLUMN
+    table.add_column("Celery Status", style="yellow")
 
     db = PhotoSynthDB()
 
@@ -53,7 +53,7 @@ def generate_table(tasks):
             elif result.status in ('FAILURE', 'REVOKED'):
                 celery_status = f"[red]{result.status}[/red]"
 
-        table.add_row(t['name'], t['hash'][:16], db_status, celery_status)  # <--- UPDATED ROW
+        table.add_row(t['name'], t['hash'][:16], db_status, celery_status)
 
     return table
 
@@ -62,7 +62,7 @@ def main():
     console.print("[bold blue]🚀 Starting Distributed Face Harvest...[/bold blue]")
     db = PhotoSynthDB()
 
-    # 1. Load Cache (Unchanged)
+    # 1. Load Cache
     console.print("   Loading DB index...")
     conn = db.get_connection()
 
@@ -76,25 +76,36 @@ def main():
     conn.close()
     console.print(f"   Loaded {len(known_paths)} paths and {len(known_hashes)} hashes.")
 
-    # 2. Find Files (Unchanged)
+    # 2. Find Files (Using the debug-friendly loop for better visibility)
     console.print("   Listing files on NAS...")
     files = []
+    file_count = 0
+    start_time = time.time()
+
     for ext in EXTENSIONS:
-        files.extend(Path(NAS_PATH).rglob(f"*{ext}"))
-        files.extend(Path(NAS_PATH).rglob(f"*{ext.upper()}"))
+        # Search for lowercase extensions
+        for p in Path(NAS_PATH).rglob(f"*{ext}"):
+            files.append(p)
+            file_count += 1
+
+        # Search for uppercase extensions
+        ext_upper = ext.upper()
+        for p in Path(NAS_PATH).rglob(f"*{ext_upper}"):
+            files.append(p)
+            file_count += 1
 
     console.print(f"[bold blue]📂 Found {len(files)} files. Starting parallel hash calculation...[/bold blue]")
 
-    tasks_for_monitor = []  # List to hold tasks for the rich monitor table
-    files_to_register = []  # List for batch DB update: (hash, path)
-    files_to_queue = []  # List of (hash, path) to send to Celery
+    tasks_for_monitor = []
+    files_to_register = []
+    files_to_queue = []
 
     path_skipped = 0
     hash_skipped = 0
 
-    # --- START OF PARALLEL HASHING AND FILTERING ---
+    # --- PARALLEL HASHING AND FILTERING ---
     with ThreadPoolExecutor(max_workers=HASH_WORKERS) as executor:
-        # Submit all hash calculations to the thread pool
+        # Submit all hash calculations to the thread pool, filtering out the @eaDir paths
         future_to_path = {
             executor.submit(calculate_content_hash, str(p)): str(p)
             for p in files if "@eaDir" not in str(p)
@@ -141,7 +152,7 @@ def main():
             "name": Path(path_str).name,
             "path": path_str,
             "hash": f_hash,
-            "task_id": task_result.id  # <--- Store the Celery ID
+            "task_id": task_result.id
         })
 
     console.print(f"[bold green]✅ Queued {len(files_to_queue)} files for processing[/bold green]")
@@ -154,7 +165,7 @@ def main():
     # 3. Monitor Progress
     console.print("\n[bold blue]📊 Monitoring progress (Ctrl+C to exit)...[/bold blue]\n")
 
-    with Live(generate_table(tasks_for_monitor), refresh_per_second=2) as live:  # Use the new list
+    with Live(generate_table(tasks_for_monitor), refresh_per_second=2) as live:
         try:
             while True:
                 live.update(generate_table(tasks_for_monitor))
