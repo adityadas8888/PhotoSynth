@@ -130,17 +130,22 @@ def finalize_file(file_hash):
     if not data: return "ERROR_NO_DATA"
     if data['status'] == 'COMPLETED': return "ALREADY_COMPLETED"
     
-    import json
     try:
-        # Merge Data
-        caption_data = json.loads(data['caption_data'])
+        # Merge Data (Postgres JSONB returns dict, not string)
+        caption_data = data['caption_data']
+        if isinstance(caption_data, str):
+            import json
+            caption_data = json.loads(caption_data)
         
         narrative = caption_data.get('narrative', '')
         concepts = caption_data.get('concepts', [])
         
         # Optional: Add detected objects to keywords
         if data['detection_data']:
-            det_data = json.loads(data['detection_data'])
+            det_data = data['detection_data']
+            if isinstance(det_data, str):
+                import json
+                det_data = json.loads(det_data)
             objects = det_data.get('objects', [])
             concepts.extend(objects)
             concepts = list(set(concepts)) # Deduplicate
