@@ -85,12 +85,12 @@ def main():
         console.print("[yellow]⚠️  No files found.[/yellow]")
         sys.exit(0)
 
-    # 2. Pre-calculate hashes and queue tasks
+    # 2. Pre-calculate hashes and queue tasks (Two-Pass Batching)
     tasks = []
-    console.print(f"[bold blue]📸 Found {len(files)} files. Queuing...[/bold blue]")
+    console.print(f"[bold blue]📸 Found {len(files)} files. Queuing Batch 1: Detection...[/bold blue]")
     
+    # Pass 1: Detection
     for f in files:
-        # Calculate hash upfront so we can track it in DB
         f_hash = calculate_content_hash(str(f))
         if not f_hash: continue
         
@@ -100,8 +100,20 @@ def main():
             "hash": f_hash
         })
         
-        # Dispatch Job
+        # Dispatch Detection
         run_detection_pass.delay(str(f))
+
+    console.print(f"[bold blue]🤖 Queuing Batch 2: Captioning...[/bold blue]")
+    
+    # Pass 2: Captioning
+    # We reuse the calculated hashes/tasks list, but we need to dispatch caption tasks
+    # Note: We dispatch them NOW. 
+    # - In Distributed mode: 5090 picks them up immediately.
+    # - In Single Node mode: Worker finishes Detections (FIFO), then picks these up.
+    from photosynth.tasks import run_vlm_captioning
+    
+    for task in tasks:
+        run_vlm_captioning.delay(task['path'])
 
     # 3. Live Monitor Loop
     with Live(generate_table(tasks), refresh_per_second=4) as live:

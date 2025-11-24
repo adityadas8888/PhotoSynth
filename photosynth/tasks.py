@@ -42,50 +42,58 @@ def run_detection_pass(file_path):
     print(f"🔍 DAILY DETECT: {os.path.basename(file_path)}")
     
     db = get_db()
-    # Use Visual Hash
     file_hash = calculate_content_hash(file_path)
     
     if not file_hash: return "ERROR_HASH"
     
-    if db.check_status(file_hash) == 'COMPLETED':
-        print(f"Skipping {file_path} (Done)")
-        return "SKIPPED"
+    # Check if already done
+    data = db.get_file_data(file_hash)
+    if data and data.get('detection_status') == 'COMPLETED':
+        return "SKIPPED_DONE"
 
     db.register_file(file_hash, file_path)
-    db.update_status(file_hash, 'PROCESSING_DETECTION')
+    db.update_detection_result(file_hash, 'PROCESSING')
 
     detector = get_detector()
     det_results = detector.run_detection(file_path)
 
-    job_payload = {
-        'file_path': file_path,
-        'file_hash': file_hash,
-        'det_results': det_results
-    }
+    # Save Results
+    db.update_detection_result(file_hash, 'COMPLETED', det_results)
     
-    # Forward to 5090
-    run_vlm_captioning.apply_async(args=[job_payload], queue='vlm_queue')
+    # Check if we can finalize (if captioning is already done)
+    # Re-fetch to get latest status
+    data = db.get_file_data(file_hash)
+    if data.get('caption_status') == 'COMPLETED':
+        finalize_file.delay(file_hash)
+        
     return f"Detected {len(det_results.get('objects', []))} objects"
 
 @app.task(name='photosynth.tasks.run_vlm_captioning')
-def run_vlm_captioning(job_data):
-    global detector_instance
-    
-    if isinstance(job_data, str):
-        file_path = job_data
-        file_hash = calculate_content_hash(file_path)
-        det_results = {}
-    else:
-        file_path = job_data.get('file_path')
-        file_hash = job_data.get('file_hash')
-        det_results = job_data.get('det_results', {})
-
-    print(f"🤖 VLM CAPTION: {os.path.basename(file_path)}")
-    
+def run_vlm_captioning(file_path):
     # Heal path for 5090 context
     file_path = heal_path(file_path)
+    print(f"🤖 VLM CAPTION: {os.path.basename(file_path)}")
     
+    db = get_db()
+    file_hash = calculate_content_hash(file_path)
+    
+    # Check if already done
+    data = db.get_file_data(file_hash)
+    if data and data.get('caption_status') == 'COMPLETED':
+        return "SKIPPED_DONE"
+
+    # Fetch detection context if available
+    import json
+    det_results = {}
+    if data and data.get('detection_data'):
+        try:
+            det_results = json.loads(data['detection_data'])
+        except: pass
+
+    db.update_caption_result(file_hash, 'PROCESSING')
+
     # CRITICAL: Free VRAM by unloading detector before loading VLM
+    global detector_instance
     if detector_instance is not None:
         print("🧹 Unloading Detector to free VRAM...")
         del detector_instance
@@ -94,9 +102,6 @@ def run_vlm_captioning(job_data):
         gc.collect()
         torch.cuda.empty_cache()
     
-    db = get_db()
-    db.update_status(file_hash, 'PROCESSING_VLM')
-
     captioner = get_captioner()
     analysis = captioner.generate_analysis(file_path, det_results)
     
@@ -105,13 +110,53 @@ def run_vlm_captioning(job_data):
         print(f"⚠️ WARNING: No keywords generated for {os.path.basename(file_path)}. Adding fallback.")
         analysis['concepts'] = ["needs_review"]
     
-    writer = get_writer()
-    success = writer.write_metadata(file_path, analysis['narrative'], analysis['concepts'])
+    # Save Results
+    db.update_caption_result(file_hash, 'COMPLETED', analysis)
 
-    final_status = 'COMPLETED' if success else 'ERROR_METADATA'
-    db.update_status(file_hash, final_status, analysis['narrative'], analysis['concepts'])
+    # Check if we can finalize (if detection is already done)
+    # Re-fetch to get latest status
+    data = db.get_file_data(file_hash)
+    if data.get('detection_status') == 'COMPLETED':
+        finalize_file.delay(file_hash)
 
-    return {"status": final_status, "file": file_path}
+    return {"status": "COMPLETED", "file": file_path}
+
+@app.task(name='photosynth.tasks.finalize_file')
+def finalize_file(file_hash):
+    print(f"🏁 FINALIZING: {file_hash}")
+    db = get_db()
+    data = db.get_file_data(file_hash)
+    
+    if not data: return "ERROR_NO_DATA"
+    if data['status'] == 'COMPLETED': return "ALREADY_COMPLETED"
+    
+    import json
+    try:
+        # Merge Data
+        caption_data = json.loads(data['caption_data'])
+        
+        narrative = caption_data.get('narrative', '')
+        concepts = caption_data.get('concepts', [])
+        
+        # Optional: Add detected objects to keywords
+        if data['detection_data']:
+            det_data = json.loads(data['detection_data'])
+            objects = det_data.get('objects', [])
+            concepts.extend(objects)
+            concepts = list(set(concepts)) # Deduplicate
+            
+        file_path = heal_path(data['file_path'])
+        
+        writer = get_writer()
+        success = writer.write_metadata(file_path, narrative, concepts)
+        
+        final_status = 'COMPLETED' if success else 'ERROR_METADATA'
+        db.update_status(file_hash, final_status, narrative, concepts)
+        return final_status
+        
+    except Exception as e:
+        print(f"❌ Finalization Error: {e}")
+        return "ERROR_EXCEPTION"
 
 # --- HARVEST TASKS ---
 

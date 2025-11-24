@@ -42,6 +42,15 @@ class PhotoSynthDB:
                 file_hash TEXT PRIMARY KEY,
                 file_path TEXT,
                 status TEXT DEFAULT 'PENDING',
+                
+                -- Granular Status Tracking
+                detection_status TEXT DEFAULT 'PENDING',
+                caption_status TEXT DEFAULT 'PENDING',
+                
+                -- Intermediate Results (JSON)
+                detection_data TEXT,
+                caption_data TEXT,
+                
                 vlm_narrative TEXT,
                 search_concepts TEXT,
                 last_updated REAL
@@ -104,6 +113,31 @@ class PhotoSynthDB:
         conn.execute(f"UPDATE media_files SET {', '.join(updates)} WHERE file_hash=?", params)
         conn.commit()
         conn.close()
+
+    def update_detection_result(self, file_hash, status, data=None):
+        conn = self.get_connection()
+        import json
+        json_data = json.dumps(data) if data else None
+        conn.execute("UPDATE media_files SET detection_status=?, detection_data=?, last_updated=? WHERE file_hash=?", 
+                    (status, json_data, time.time(), file_hash))
+        conn.commit()
+        conn.close()
+
+    def update_caption_result(self, file_hash, status, data=None):
+        conn = self.get_connection()
+        import json
+        json_data = json.dumps(data) if data else None
+        conn.execute("UPDATE media_files SET caption_status=?, caption_data=?, last_updated=? WHERE file_hash=?", 
+                    (status, json_data, time.time(), file_hash))
+        conn.commit()
+        conn.close()
+
+    def get_file_data(self, file_hash):
+        conn = self.get_connection()
+        conn.row_factory = sqlite3.Row
+        row = conn.execute("SELECT * FROM media_files WHERE file_hash=?", (file_hash,)).fetchone()
+        conn.close()
+        return dict(row) if row else None
 
     def check_status(self, file_hash):
         conn = self.get_connection()
