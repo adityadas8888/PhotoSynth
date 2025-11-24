@@ -14,7 +14,7 @@ from photosynth.utils.hashing import calculate_content_hash
 
 ROOT_PATH = os.path.expanduser("~/personal/nas")
 SCAN_PATHS = [
-    os.path.join(ROOT_PATH, "homes/aditya/"),
+    os.path.join(ROOT_PATH, "homes/"),
     os.path.join(ROOT_PATH, "photo"),
 
 ]
