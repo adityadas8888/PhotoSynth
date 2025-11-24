@@ -12,8 +12,12 @@ from photosynth.db import PhotoSynthDB
 from photosynth.tasks import extract_faces_task
 from photosynth.utils.hashing import calculate_content_hash
 
-# Config
-NAS_PATH = os.path.expanduser("~/personal/nas/video/TEST")
+ROOT_PATH = os.path.expanduser("~/personal/nas")
+SCAN_PATHS = [
+    os.path.join(ROOT_PATH, "homes/aditya/"),
+    os.path.join(ROOT_PATH, "photo"),
+
+]
 EXTENSIONS = ['.jpg', '.jpeg', '.png', '.arw', '.heic']
 HASH_WORKERS = 16
 
@@ -21,6 +25,7 @@ console = Console()
 
 
 def generate_table(tasks):
+    # ... (generate_table function remains the same) ...
     table = Table(title="Face Scanning Progress")
     table.add_column("File", style="cyan")
     table.add_column("Hash", style="blue")
@@ -76,27 +81,31 @@ def main():
     conn.close()
     console.print(f"   Loaded {len(known_paths)} paths and {len(known_hashes)} hashes.")
 
-    # 2. Find Files (THE FIX: Using os.walk for robust traversal)
+    # 2. Find Files (Updated to loop through SCAN_PATHS)
     console.print("   Listing files on NAS via os.walk...")
     files = []
-
     valid_extensions = set(e.lower() for e in EXTENSIONS)
 
-    for root, dirs, filenames in os.walk(NAS_PATH):
-        # Skip Synology's hidden metadata directories immediately
-        if "@eaDir" in root:
+    # --- CHANGE 2: Iterate over the list of paths ---
+    for base_path in SCAN_PATHS:
+        if not os.path.isdir(base_path):
+            console.print(f"[yellow]⚠️ Warning: Skipping missing path: {base_path}[/yellow]")
             continue
 
-        # Optional: Modify dirs in-place to prune traversal (e.g., skip 'node_modules')
-        # if 'node_modules' in dirs: dirs.remove('node_modules')
+        console.print(f"   Searching: {base_path}...")
 
-        for name in filenames:
-            file_path = Path(root) / name
+        for root, dirs, filenames in os.walk(base_path):
+            # Skip Synology's hidden metadata directories immediately
+            if "@eaDir" in root:
+                continue
 
-            # Manual extension check (faster than rglob for huge trees)
-            ext = file_path.suffix.lower()
-            if ext in valid_extensions:
-                files.append(file_path)
+            for name in filenames:
+                file_path = Path(root) / name
+
+                # Manual extension check (faster than rglob for huge trees)
+                ext = file_path.suffix.lower()
+                if ext in valid_extensions:
+                    files.append(file_path)
 
     console.print(f"[bold blue]📂 Found {len(files)} files. Starting parallel hash calculation...[/bold blue]")
 
@@ -107,7 +116,7 @@ def main():
     path_skipped = 0
     hash_skipped = 0
 
-    # --- PARALLEL HASHING AND FILTERING ---
+    # --- PARALLEL HASHING AND FILTERING (Remains the same) ---
     with ThreadPoolExecutor(max_workers=HASH_WORKERS) as executor:
         # Submit all hash calculations to the thread pool
         future_to_path = {
