@@ -34,37 +34,46 @@ def get_file_status(file_hash):
         return "UNKNOWN"
 
 def generate_table(tasks):
-    """Creates the rich table."""
-    table = Table(title="🚀 PhotoSynth Pipeline Status")
+    table = Table(title="PhotoSynth Pipeline Status")
     table.add_column("File", style="cyan")
     table.add_column("Status", style="magenta")
-    table.add_column("Stage", style="green")
+    table.add_column("Det", style="green")
+    table.add_column("Cap", style="yellow")
+    table.add_column("Last Update", style="blue")
 
-    # Icon map
-    icons = {
-        "QUEUED": "⏳",
-        "PROCESSING_DETECTION": "👁️  (3090)",
-        "PROCESSING_VLM": "🤖 (5090)",
-        "COMPLETED": "✅",
-        "ERROR_METADATA": "⚠️  Meta Err",
-        "SKIPPED": "⏭️  Skip"
-    }
+    db = PhotoSynthDB()
+    
+    for t in tasks:
+        data = db.get_file_data(t['hash'])
+        
+        status = "PENDING"
+        det_status = "-"
+        cap_status = "-"
+        last_update = "-"
+        
+        if data:
+            status = data.get('status', 'UNKNOWN')
+            det_status = data.get('detection_status', '-')
+            cap_status = data.get('caption_status', '-')
+            
+            ts = data.get('last_updated')
+            if ts:
+                import datetime
+                dt = datetime.datetime.fromtimestamp(ts)
+                last_update = dt.strftime("%H:%M:%S")
 
-    for task in tasks:
-        status = get_file_status(task['hash'])
-        # Map DB status to readable stage
-        icon = icons.get(status, "❓")
-        
-        # Colorize
-        style = "white"
-        if status == "COMPLETED": style = "green"
-        if "PROCESSING" in status: style = "bold yellow"
-        
+        # Color coding
+        s_style = "white"
+        if status == 'COMPLETED': s_style = "bold green"
+        elif 'PROCESSING' in status: s_style = "bold yellow"
+        elif 'ERROR' in status: s_style = "bold red"
+
         table.add_row(
-            task['name'], 
-            status, 
-            icon,
-            style=style
+            t['name'], 
+            f"[{s_style}]{status}[/{s_style}]",
+            det_status,
+            cap_status,
+            last_update
         )
     return table
 
