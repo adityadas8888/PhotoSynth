@@ -221,35 +221,50 @@ def run_clustering_task(total_embeddings_count):
     print(f"🧠 STARTING CLUSTERING of {total_embeddings_count} embeddings...")
     db = get_db()
 
+    # 1. Load Data
     all_face_data = db.get_all_embeddings()
+    if not all_face_data:
+        return "No faces to cluster."
+
     embeddings = np.array([d[1] for d in all_face_data], dtype=np.float32)
     face_ids = [d[0] for d in all_face_data]
     d = embeddings.shape[1]
+    num_samples = len(embeddings)
 
-    k = 10000
-    niter = 25
+    # 2. Smart K Adjustment
+    # You cannot have more clusters than data points.
+    # Logic: If we have > 20k faces, cap at 10k people.
+    # Otherwise, assume roughly 1 person per 5 faces average, but ensure at least 1 cluster.
+    max_k = 10000
+    k = min(max_k, max(1, num_samples // 5))
 
-    if faiss.get_num_gpus() > 0:
-        res = faiss.StandardGpuResources()
-        kmeans = faiss.GpuClustering(d, k, res=res)
-    else:
-        kmeans = faiss.Clustering(d, k)
+    if num_samples < k:
+        k = max(1, num_samples)
 
-    kmeans.niter = niter
+    print(f"Running FAISS K-Means with k={k} on {num_samples} vectors...")
 
+    # 3. Initialize High-Level K-Means (Handles GPU automatically)
+    # gpu=True tells FAISS to use all available GPUs
+    kmeans = faiss.Kmeans(d, k, niter=25, verbose=True, gpu=True)
+
+    # 4. Train & Assign
     kmeans.train(embeddings)
+
+    # search() returns the distance (D) and the cluster index (I)
     D, I = kmeans.index.search(embeddings, 1)
 
+    # 5. Prepare Batch Update
     cluster_map = []
     for i, cluster_index in enumerate(I):
         cluster_id = int(cluster_index[0])
         face_id = face_ids[i]
         cluster_map.append((cluster_id, face_id))
 
+    # 6. Update DB & Rebuild Index
     db.update_clusters(cluster_map)
 
     manager = get_faiss_manager()
     manager.index = None
     manager.build_index_if_missing()
 
-    return f"Clustered {len(embeddings)} faces into {kmeans.obj[2]} clusters."
+    return f"Clustered {num_samples} faces into {k} clusters."
