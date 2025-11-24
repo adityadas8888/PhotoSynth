@@ -85,33 +85,34 @@ def main():
         console.print("[yellow]⚠️  No files found.[/yellow]")
         sys.exit(0)
 
-    # 2. Pre-calculate hashes and queue tasks (Two-Pass Batching)
+    # 2. Phase 1: Fast Scan, Hash & Register
     tasks = []
-    console.print(f"[bold blue]📸 Found {len(files)} files. Queuing Batch 1: Detection...[/bold blue]")
+    console.print(f"[bold blue]🚀 Phase 1: Hashing & Registering {len(files)} files...[/bold blue]")
     
-    # Pass 1: Detection
+    from photosynth.db import PhotoSynthDB
+    db = PhotoSynthDB()
+    
     for f in files:
-        f_hash = calculate_content_hash(str(f))
+        f_path = str(f)
+        f_hash = calculate_content_hash(f_path)
         if not f_hash: continue
+        
+        # Register upfront to prevent race conditions
+        db.register_file(f_hash, f_path)
         
         tasks.append({
             "name": f.name,
-            "path": str(f),
+            "path": f_path,
             "hash": f_hash
         })
-        
-        # Dispatch Detection
-        run_detection_pass.delay(str(f))
 
-    console.print(f"[bold blue]🤖 Queuing Batch 2: Captioning...[/bold blue]")
-    
-    # Pass 2: Captioning
-    # We reuse the calculated hashes/tasks list, but we need to dispatch caption tasks
-    # Note: We dispatch them NOW. 
-    # - In Distributed mode: 5090 picks them up immediately.
-    # - In Single Node mode: Worker finishes Detections (FIFO), then picks these up.
+    # 3. Phase 2: Queue GPU Tasks
+    console.print(f"[bold blue]📸 Phase 2: Queuing Detection...[/bold blue]")
+    for task in tasks:
+        run_detection_pass.delay(task['path'])
+
+    console.print(f"[bold blue]🤖 Phase 3: Queuing Captioning...[/bold blue]")
     from photosynth.tasks import run_vlm_captioning
-    
     for task in tasks:
         run_vlm_captioning.delay(task['path'])
 
